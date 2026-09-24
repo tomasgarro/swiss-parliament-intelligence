@@ -13,9 +13,18 @@ for(const file of await walk(root)){
  const size=(await stat(file)).size,url=auth.url.replace(/\/$/,'')+'/'+name.split('/').map(encodeURIComponent).join('/')+'?override=true';
  const r=await fetch(url,{method:'POST',headers:{...headers,'Upload-Length':String(size),'Upload-Offset':'0'},signal:AbortSignal.timeout(60000)});
  if(r.status!==201)throw Error('UPLOAD_CREATE_FAILED '+name+' '+r.status);
- const f=await open(file);try{let offset=0;while(offset<size){const chunk=Buffer.alloc(Math.min(8*1024*1024,size-offset));const {bytesRead}=await f.read(chunk,0,chunk.length,offset);
-  const sent=await fetch(url,{method:'PATCH',headers:{...headers,'Content-Type':'application/offset+octet-stream','Upload-Offset':String(offset)},body:chunk.subarray(0,bytesRead),signal:AbortSignal.timeout(180000)});
-  if(sent.status!==204||Number(sent.headers.get('Upload-Offset'))!==offset+bytesRead)throw Error('UPLOAD_CHUNK_FAILED '+name+' '+sent.status);offset+=bytesRead;
+ // A dropped connection resumes from the offset the server confirms (TUS HEAD) instead of failing the release.
+ const f=await open(file);try{let offset=0,retries=0;while(offset<size){const chunk=Buffer.alloc(Math.min(8*1024*1024,size-offset));const {bytesRead}=await f.read(chunk,0,chunk.length,offset);
+  try{
+   const sent=await fetch(url,{method:'PATCH',headers:{...headers,'Content-Type':'application/offset+octet-stream','Upload-Offset':String(offset)},body:chunk.subarray(0,bytesRead),signal:AbortSignal.timeout(180000)});
+   if(sent.status!==204||Number(sent.headers.get('Upload-Offset'))!==offset+bytesRead)throw Error('UPLOAD_CHUNK_FAILED '+name+' '+sent.status);offset+=bytesRead;retries=0;
+  }catch(error){
+   if(++retries>8)throw error;
+   await new Promise(done=>setTimeout(done,2000*retries));
+   const head=await fetch(url,{method:'HEAD',headers,signal:AbortSignal.timeout(60000)}).catch(()=>null);
+   const confirmed=Number(head?.headers.get('Upload-Offset'));if(Number.isFinite(confirmed)&&confirmed>=0&&confirmed<=size)offset=confirmed;
+   console.log(JSON.stringify({resume:name,offset,retry:retries,reason:String(error.message||error).slice(0,80)}));
+  }
  }}finally{await f.close();}
  console.log(JSON.stringify({uploaded:name,bytes:size}));
 }
