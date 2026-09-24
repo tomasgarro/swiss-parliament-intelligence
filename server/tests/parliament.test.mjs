@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openParliament,officialDate,statusGroup,plainText} from '../parliament.mjs';
-import {assessComparability,answerParliament} from '../parliament-ai.mjs';
+import {assessComparability,answerParliament,selectPassages} from '../parliament-ai.mjs';
 
 test('parliamentary status is not a scheduled popular vote',()=>{
  assert.equal(statusGroup('Liquidé'),'concluded');assert.equal(statusGroup('Déposé'),'proceedings');assert.equal(statusGroup('Unknown status'),'unclassified');
@@ -57,4 +57,12 @@ test('a follow-up that finds nothing in its passage widens once to the whole deb
   return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify(content)}}]})};};
  const answer=await answerParliament(store,{question:'What was said about data protection?',language:'en',passageId:'900-1'},{INFERENCE_BASE_URL:'https://example.test/v1',INFERENCE_MODEL:'fixture'},fetchImpl);
  assert.equal(answer.status,'ok');assert.equal(answer.researchSummary.broadened.to,'debate');assert.equal(answer.researchSummary.broadened.businessId,'b1');
+});
+
+test('a single-speaker scope fills every slot, after distinct speakers are preferred',()=>{
+ const text=i=>'Une intervention substantielle numéro '+i+' sur la réforme, avec assez de mots pour être retenue comme preuve.';
+ const one=new Map([...Array(8)].map((_,i)=>['p'+i,{passage:{id:'p'+i,speaker:'Quadri Lorenzo',text:text(i)},score:1-i/10}]));
+ assert.deepEqual(selectPassages(one,6).map(s=>s.id),['p0','p1','p2','p3','p4','p5']);
+ const mixed=new Map([...one,['q',{passage:{id:'q',speaker:'Docourt Martine',text:text('q')},score:0.05}]]);
+ assert.deepEqual(selectPassages(mixed,3).map(s=>s.id),['p0','q','p1'],'a second speaker still outranks the first speaker’s next passage');
 });

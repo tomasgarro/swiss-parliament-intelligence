@@ -70,6 +70,8 @@ export function selectPassages(scored,limit=4,{distinctBusiness=false}={}){
  if(distinctBusiness)for(const s of ranked){if(chosen.length===limit)break;if(!s.businessId||debates.has(s.businessId)||speakers.has(s.speaker))continue;chosen.push(s);debates.add(s.businessId);speakers.add(s.speaker);if(s.group)groups.add(s.group);}
  for(const s of ranked){if(chosen.length===limit)break;if(chosen.includes(s)||speakers.has(s.speaker)||(s.group&&groups.has(s.group)))continue;chosen.push(s);speakers.add(s.speaker);if(s.group)groups.add(s.group);}
  for(const s of ranked){if(chosen.length===limit)break;if(!chosen.includes(s)&&!speakers.has(s.speaker)){chosen.push(s);speakers.add(s.speaker);}}
+ // Diversity is a preference, not a cap: a person scope or a named speaker has one speaker, so fill the rest by score.
+ for(const s of ranked){if(chosen.length===limit)break;if(!chosen.includes(s))chosen.push(s);}
  return chosen;
 }
 // A follow-up asked inside a narrow scope (one passage or one person) should not dead-end: when that scope
