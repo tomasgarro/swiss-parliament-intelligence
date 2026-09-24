@@ -139,6 +139,30 @@ Application-row backup excludes secrets and sessions. A restore requires an expl
 - Session refresh failure must preserve the previous validated snapshot.
 - The H100 LaunchPad allocation is temporary infrastructure. Tunnel restart handling cannot extend that allocation.
 
+## Stance evaluation
+
+[`config/evaluation/stance-cases.json`](../config/evaluation/stance-cases.json) holds 27 questions (7 EN, 7 FR, 7 DE, 6 IT) on seven 2024–2026 popular initiatives and the EFTA–Mercosur agreement. Each case lists speakers whose position the Official Bulletin states without ambiguity, with the quoted sentence and passage ID so anyone can check it. [`scripts/evaluate-stances.mjs`](../scripts/evaluate-stances.mjs) asks every question through the live answer pipeline in-process, the way `scripts/prepare-answers.mjs` does (prepared answers, web research and access control off). It needs the corpus in `data/parliament.sqlite`.
+
+```bash
+node --env-file=.env scripts/evaluate-stances.mjs --provider=openai                  # all cases on gpt-6-luna
+node --env-file=.env scripts/evaluate-stances.mjs --provider=openai --only=en-10m-debate,fr-10m-buffat
+node --env-file=.env scripts/evaluate-stances.mjs --provider=openai --judge=openai   # LLM verdict for mentions the rules cannot place
+node scripts/evaluate-stances.mjs --rescore=data/evaluations/stances-<timestamp>.json # score stored answers again, no model calls
+node scripts/evaluate-stances.mjs --check                                             # validate the cases file
+```
+
+Scoring is deterministic ([`scripts/lib/stance-score.mjs`](../scripts/lib/stance-score.mjs)). For each expected speaker the answer names, it reads the side from cues in that speaker's own clause ("supports", "opponents such as", "soutient", "lehnt … ab", "respinge", in four languages), then from the section title ("What opponents argued", "Arguments des partisans", "Argumente der Gegner"). A counter-proposal is never read as the proposal. A mention it cannot place stays unclassified. `--judge=openai` sends only those mentions to gpt-6-luna (Responses API, strict JSON output). The table goes to stdout, and every verdict with its sentence, cue, answer text and citations goes to `data/evaluations/stances-<timestamp>.json`.
+
+| Result | Exit code | Meaning |
+|---|---|---|
+| FLIP | 1 | The answer places a speaker on the side opposite to the quoted record, or puts a speaker who took no side on one. Fix the pipeline (synthesis prompt, retrieval), not the case. |
+| ROLE | 1 | A member of Parliament presented as the Federal Council ("Federal Councillor Buffat", "Buffat, on behalf of the Federal Council"), a paragraph that speaks as the Federal Council while citing only members' speeches, or a Federal Councillor presented as a member. |
+| FORBIDDEN | 1 | A phrase the case rules out, such as "the Federal Council supports the initiative". |
+| NOT CITED, STATUS, unclassified | 0 (warn) | The named speaker was not cited, the answer came back degraded (refusal, sources only, replay), or the wording could not be placed. Read it; it is not a failure. |
+| no answers | 2 | No case returned an answer, so nothing was measured. Check the model settings. |
+
+The rules are conservative, and each verdict shows the sentence and cue behind it. If a FLIP is a misreading, add the phrasing to `server/tests/evaluate-stances.test.mjs` and fix the scorer. Add cases only from passages where the stance is explicit. Leave out rapporteurs who speak only for their committee, and speakers whose stance is only on a counter-proposal.
+
 ## Release acceptance
 
 Before a production update, run:
