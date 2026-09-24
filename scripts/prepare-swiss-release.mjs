@@ -7,7 +7,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 const args=new Set(process.argv.slice(2));
-if(!readFileSync('frontend/dist/client/index.html','utf8').includes('/Switzerland/assets/'))throw Error('BUILD_WITH_SWISS_PUBLIC_PATH_FIRST');
+if(!readFileSync('frontend/dist/client/index.html','utf8').includes('src="/Switzerland/assets/'))throw Error('BUILD_WITH_SWISS_PUBLIC_PATH_FIRST (in Git Bash: MSYS_NO_PATHCONV=1 VITE_PUBLIC_PATH=/Switzerland/)');
 const stamp=new Date().toISOString().replace(/[:.]/g,'-'),base='artifacts/swiss-release-'+stamp,site=base+'/site/Switzerland',data=base+'/public-data',index=base+'/semantic-index';
 const sha256=file=>new Promise((done,fail)=>{const h=createHash('sha256');createReadStream(file).on('data',c=>h.update(c)).on('end',()=>done(h.digest('hex'))).on('error',fail);});
 // Relative paths: GNU tar reads "C:\..." as a remote host.

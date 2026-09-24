@@ -2,7 +2,7 @@
 import {mkdirSync,cpSync,copyFileSync,writeFileSync,readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-if(!readFileSync('frontend/dist/client/index.html','utf8').includes('/Switzerland/assets/'))throw Error('INVALID_MOUNT');
+if(!readFileSync('frontend/dist/client/index.html','utf8').includes('src="/Switzerland/assets/'))throw Error('INVALID_MOUNT (in Git Bash: MSYS_NO_PATHCONV=1 VITE_PUBLIC_PATH=/Switzerland/)');
 const base='artifacts/swiss-code-release-'+new Date().toISOString().replace(/[:.]/g,'-');
 const site=base+'/site/Switzerland',backend=base+'/backend';mkdirSync(site,{recursive:true});mkdirSync(backend,{recursive:true});
 cpSync('frontend/dist/client',site,{recursive:true});cpSync('server',backend+'/server',{recursive:true});
