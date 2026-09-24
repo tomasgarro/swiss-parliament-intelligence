@@ -102,12 +102,14 @@ export default function Cleisthenes({language,expanded,onExpand,onCollapse,conte
 }
 
 
+// Cited speakers with their id and recorded gender, so the server can resolve "she" to one person by id.
+const speakersFrom=cited=>[...new Map(cited.filter(x=>x.speaker).map(x=>[x.speaker,{name:x.speaker,...(x.personId?{personId:String(x.personId)}:{}),...(x.gender?{gender:x.gender}:{})}])).values()].slice(0,4);
 // The last few turns, compact: enough for the server to resolve "he", "his vote", "that initiative".
 function threadFrom(messages){
  const turns=[];
  for(let i=0;i<messages.length;i++){const m=messages[i];if(m.role!=='user')continue;const a=messages[i+1]?.role==='assistant'?messages[i+1].answer:null;
   const cited=(a?.citations||[]).filter(x=>x.sourceType==='parliamentary-speech');
   const person=a?.profile?{id:String(a.profile.id),name:a.profile.name}:cited.length&&new Set(cited.map(x=>x.personId)).size===1&&cited[0].personId?{id:String(cited[0].personId),name:cited[0].speaker}:null;
-  turns.push({question:m.text,answer:a?.answer?.lead?.text||a?.claims?.map(x=>x.text).join(' ')||'',person,proposal:a?.researchSummary?.proposal?{id:String(a.researchSummary.proposal.id),title:a.researchSummary.proposal.title}:null,speakers:[...new Set(cited.map(x=>x.speaker))].slice(0,4)});}
+  turns.push({question:m.text,answer:a?.answer?.lead?.text||a?.claims?.map(x=>x.text).join(' ')||'',person,proposal:a?.researchSummary?.proposal?{id:String(a.researchSummary.proposal.id),title:a.researchSummary.proposal.title}:null,speakers:speakersFrom(cited)});}
  return turns.slice(-3);
 }
