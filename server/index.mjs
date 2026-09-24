@@ -21,7 +21,7 @@ import {searchVideo} from './video-search.mjs';
 import {readArchiveCoverage} from './archive-coverage.mjs';
 import {probeInference,lastInferenceProbe} from './ai-readiness.mjs';
 import {createModelFetch} from './model-endpoint.mjs';
-import {resolveQuestion} from './conversation.mjs';
+import {resolveQuestion,followUpRequest} from './conversation.mjs';
 import {findRecordedAnswer,replayRecorded,infrastructureFailure} from './demo-replay.mjs';
 import {findPreparedAnswer,servePrepared} from './prepared-answers.mjs';
 import {webResearch,webResearchConfigured,webResearchIntent} from './web-research.mjs';
@@ -77,8 +77,9 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
     if(prepared){try{onProgress?.({stage:'done'});}catch{}return withWebResearch(b,servePrepared(prepared),onProgress);}
     // Conversation memory: resolve "he", "that initiative" … against the thread before any research. A follow-up
     // stays on the thread's proposal ("what did she suggest?" means on that initiative); an off-topic answer from another debate would be worse than an honest gap.
+    // A resolved person scopes the request itself (personId), so the speech path reads that speaker's own passages.
     const resolution=await resolveQuestion(b.question,b.thread,{language:b.language||'en',env,fetchImpl});
-    if(resolution.resolved){try{onProgress?.({stage:'understanding',resolvedQuestion:resolution.question});}catch{}b={...b,question:resolution.question,originalQuestion:b.question,...(b.personId||b.businessId||b.passageId?{}:resolution.proposal?{businessId:resolution.proposal.id}:resolution.person?{context:{...(b.context||{}),personId:resolution.person.id}}:{})};}
+    if(resolution.resolved){try{onProgress?.({stage:'understanding',resolvedQuestion:resolution.question});}catch{}b=followUpRequest(b,resolution);}
     const withResolution=answer=>resolution.resolved?{...answer,resolvedQuestion:resolution.question,originalQuestion:b.originalQuestion}:answer;
     const recorded=findRecordedAnswer(root,b.question,b.language||'en');
     if(recorded&&lastInferenceProbe()?.state==='unreachable'&&(await probeInference(env,fetchImpl)).state==='unreachable')return replayRecorded(recorded);
