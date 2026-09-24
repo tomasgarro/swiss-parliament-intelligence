@@ -61,9 +61,10 @@ export async function resolveQuestion(question,thread,{language='en',env,fetchIm
 }
 
 // The request a resolved follow-up is answered with. The reader's explicit scope wins; otherwise it stays on the
-// thread's proposal and reads the resolved person's own speeches (personId, which the speech path honours).
-export function followUpRequest(b,resolution){
+// thread's proposal (unless the question names another one) and reads the resolved person's own speeches
+// (personId, which the speech path honours).
+export function followUpRequest(b,resolution,{otherProposal=false}={}){
  if(!resolution?.resolved)return b;
  const scoped=b.personId||b.businessId||b.passageId;
- return {...b,question:resolution.question,originalQuestion:b.question,...(scoped?{}:{...(resolution.proposal?{businessId:resolution.proposal.id}:{}),...(resolution.person?{personId:resolution.person.id}:{})})};
+ return {...b,question:resolution.question,originalQuestion:b.question,...(scoped?{}:{...(resolution.proposal&&!otherProposal?{businessId:resolution.proposal.id}:{}),...(resolution.person?{personId:resolution.person.id}:{})})};
 }

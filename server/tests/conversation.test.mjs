@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {needsResolution,cleanThread,resolveQuestion,followUpRequest} from '../conversation.mjs';
+import {namesOtherProposal} from '../parliament-ai.mjs';
 
 const thread=[{question:'Who is Lorenzo Quadri?',answer:'Lorenzo Quadri is a National Councillor for Ticino.',person:{id:'4046',name:'Lorenzo Quadri'},speakers:[]}];
 
@@ -68,4 +69,21 @@ test('a resolved follow-up reads the resolved person’s speeches unless the rea
  const scoped=followUpRequest({question:'What else did she say?',passageId:'1-1'},resolution);
  assert.equal(scoped.personId,undefined);assert.equal(scoped.businessId,undefined);
  assert.equal(followUpRequest({question:'q'},{resolved:false}).question,'q');
+ const elsewhere=followUpRequest({question:'And the neutrality initiative?'},resolution,{otherProposal:true});
+ assert.equal(elsewhere.businessId,undefined,'a question naming another proposal is not locked to the thread’s');assert.equal(elsewhere.personId,'4264');
+});
+
+test('the thread’s proposal lock yields to a question that names a different proposal',async()=>{
+ const tenMillion={id:'20250026',title:'Pas de Suisse à 10 millions ! (initiative pour la durabilité)'};
+ // Enough other titles for resolveProposal's distinctiveness thresholds, as in the real archive.
+ const store={listBusinesses:()=>[{...tenMillion,passageCount:40},{id:'20240050',title:'Sauvegarder la neutralité suisse (initiative sur la neutralité)',passageCount:12},...[...Array(3000)].map((_,i)=>({id:String(19000000+i),title:'Objet administratif',passageCount:1}))]};
+ const never=async()=>{throw new Error('no model call expected');};
+ assert.equal(await namesOtherProposal('What did she say?',tenMillion,{store,env:{INFERENCE_BASE_URL:'https://example.test/v1',INFERENCE_MODEL:'m'},fetchImpl:never}),false,'no proposal words: no model call');
+ assert.equal(await namesOtherProposal('And the ‘Stop blackout’ initiative?',tenMillion,{store,env:{}}),true,'without a model, a quoted other title counts');
+ assert.equal(await namesOtherProposal('What else about the initiative?',tenMillion,{store,env:{}}),false);
+ const model=(named,frenchTitleWords)=>async(_u,o)=>{assert.equal(JSON.parse(o.body).response_format.json_schema.name,'proposal_reference');return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({named,frenchTitleWords})}}]})};};
+ const ask=(q,reply)=>namesOtherProposal(q,tenMillion,{store,env:{INFERENCE_BASE_URL:'https://example.test/v1',INFERENCE_MODEL:'lock-'+q},fetchImpl:reply});
+ assert.equal(await ask('And the neutrality initiative?',model(true,'neutralité suisse')),true);
+ assert.equal(await ask('And what else on the 10-million initiative?',model(true,'Pas de Suisse à 10 millions durabilité')),false,'the same proposal keeps the lock');
+ assert.equal(await ask('What did she say about that initiative?',model(false,'')),false);
 });

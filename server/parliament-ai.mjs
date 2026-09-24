@@ -47,6 +47,20 @@ export function resolveProposal(store,proposal){
  if(!top||(wanted.length===1?top.score<6:top.score<9||top.matched/wanted.length<0.5))return null;
  return top.business;
 }
+// A follow-up that names a proposal of its own ("And the neutrality initiative?", "l'initiative « Stop au blackout »")
+// must not stay locked to the thread's proposal. The model gives French title words, so a question in any language
+// matches the official title; without a model only a quoted title counts. Most follow-ups name no proposal at all
+// ("what did she say?") and skip the model call.
+const PROPOSAL_WORDS=/initiati|iniziativ|referend|\b(loi|law|bill|gesetz|legge|vorlage|projet|proposal|budget|motion|postulat)\b|[«“„"‘]|(?:^|\s)'/;
+const quotedTitles=q=>[...String(q).matchAll(/[«“„"]\s*([^«»“”„"]{3,160}?)\s*[»”“"]|(?:^|[\s(])['‘]([^'‘’]{3,160}?)['’](?=[\s?.,!;:)]|$)/gu)].map(m=>m[1]||m[2]);
+export async function namesOtherProposal(question,proposal,{store,env,fetchImpl=fetch}={}){
+ if(!proposal?.title||!PROPOSAL_WORDS.test(fold(question)))return false;
+ const own=new Set(titleTokens(proposal.title)),differs=words=>{const t=titleTokens(words);return t.length>0&&t.filter(x=>own.has(x)).length<t.length/2;};
+ const named=env?.INFERENCE_BASE_URL&&env?.INFERENCE_MODEL?await proposalReference(question,env,fetchImpl).catch(()=>null):null;
+ if(named===null)return quotedTitles(question).some(differs);
+ const business=named&&store?resolveProposal(store,named):null;
+ return business?String(business.id)!==String(proposal.id):Boolean(named)&&differs(named);
+}
 // Every passage of a resolved proposal is on topic, so rank for substance: overlap with the question's
 // terms in any language, and argued speeches over one-line procedural remarks.
 export function rankWithinProposal(pool,texts){
