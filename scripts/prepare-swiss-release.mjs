@@ -48,7 +48,7 @@ if(!args.has('--skip-index')){
 }
 
 const backend=base+'/backend';mkdirSync(backend,{recursive:true});
-cpSync('server',backend+'/server',{recursive:true,filter:src=>!/[\\/]tests([\\/]|$)/.test(src)});cpSync('config',backend+'/config',{recursive:true});
+cpSync('server',backend+'/server',{recursive:true,filter:src=>!/[\\/]tests([\\/]|$)/.test(src)});cpSync('config',backend+'/config',{recursive:true});if(existsSync('data/parliament/prepared-answers.json'))copyFileSync('data/parliament/prepared-answers.json',backend+'/config/prepared-answers.json');
 for(const file of ['package.json','package-lock.json'])copyFileSync(file,backend+'/'+file);copyFileSync('deploy/switzerland/bootstrap.mjs',backend+'/bootstrap.mjs');
 const appArchive=base+'/backend.tgz';pack(backend,appArchive);const appHash=await sha256(appArchive);
 

@@ -5,12 +5,14 @@ import {existsSync,readFileSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 
 export const PREPARED_FILE='data/parliament/prepared-answers.json';
+// A release ships the screened library with the code (config/); the data-volume copy is the fallback.
+const SHIPPED_FILE='config/prepared-answers.json';
 export const preparedKey=({question,language,businessId,personId})=>[String(language||'en'),String(businessId||''),String(personId||''),
  String(question||'').normalize('NFKC').toLowerCase().replace(/[’']/g,"'").replace(/\s+/g,' ').replace(/[\s?!.]+$/,'').trim()].join('|');
 let cache=null;
 export function loadPreparedAnswers(root){
- const file=join(root,PREPARED_FILE);
- if(!existsSync(file))return new Map();
+ const file=[SHIPPED_FILE,PREPARED_FILE].map(f=>join(root,f)).find(f=>existsSync(f));
+ if(!file)return new Map();
  const mtime=statSync(file).mtimeMs;if(cache?.file===file&&cache.mtime===mtime)return cache.map;
  const data=JSON.parse(readFileSync(file,'utf8'));
  const map=new Map((data.answers||[]).filter(a=>a.question&&a.answer?.status==='ok'&&a.answer.answer).map(a=>[preparedKey(a),a]));

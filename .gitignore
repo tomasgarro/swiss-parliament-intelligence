@@ -7,3 +7,6 @@ deploy/switzerland/public-data/
 !*.env.example
 artifacts/
 /node_modules/
+
+# Generated prepared-answer library, shipped inside releases (see scripts/prepare-swiss-code-release.mjs)
+config/prepared-answers.json
