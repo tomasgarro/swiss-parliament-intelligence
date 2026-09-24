@@ -23,6 +23,7 @@
     "embeddings:export": "node scripts/export-public-embedding-input.mjs",
     "gpu:handoff": "node scripts/prepare-gpu-handoff.mjs && node scripts/verify-gpu-handoff.mjs",
     "evaluate:typesafe": "node --env-file-if-exists=.env scripts/evaluate-typesafe.mjs",
+    "evaluate:stances": "node --env-file-if-exists=.env scripts/evaluate-stances.mjs",
     "align:parliament": "node scripts/align-parliament-video.mjs",
     "docs:status": "node scripts/session-status.mjs",
     "docs:check": "node scripts/check-docs.mjs"
