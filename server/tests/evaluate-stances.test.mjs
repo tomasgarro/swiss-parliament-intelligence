@@ -127,3 +127,9 @@ test('the stance cases are well-formed and cover four languages',()=>{
   for(const n of c.expect.mustCite||[])assert.ok(c.expect.speakers.some(s=>s.name===n),c.id+' '+n);
  }
 });
+
+test('Italian "ha sostenuto di votare no" is reported speech, not support',()=>{
+ const caseDef={id:'it',language:'it',expect:{speakers:[{name:'Benjamin Roduit',surname:'Roduit',stance:'against'}]}};
+ const response={status:'ok',mode:'live-inference',answer:{lead:{text:'Il dibattito ha visto posizioni diverse.',citationIds:[]},sections:[{title:'Contro',paragraphs:[{text:"Il 25 settembre 2025 Benjamin Roduit ha sostenuto di votare no all'iniziativa e di sostenere il controprogetto diretto.",citationIds:[]}]}]},citations:[]};
+ assert.equal(scoreAnswer(caseDef,response).speakers[0].result,'ok');
+});
