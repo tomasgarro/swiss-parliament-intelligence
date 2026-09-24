@@ -5,7 +5,7 @@
 - **Answers:** OpenAI gpt-6-luna for every model step: understanding, search terms, per-passage claims, claim review, the written answer, follow-ups and translation. A probe of all nine steps ran 27 calls with no schema, truncation or refusal problems. The 10-million question took 36 s locally with 8 checked claims and 3 citations, and got the stances right: Buffat for; Docourt, Klopfenstein Broggini and the Federal Council against.
 - **Why not NVIDIA's catalog:** in a paced test, 9 of 60 calls to Nemotron 3 Super 120B succeeded (429 and 503). The 9B and Super 49B returned 410. One answer needs about 12–15 model calls. The 9B on the GPU also put a supporter (Buffat) among the opponents.
 - **Access:** `ACCESS_POLICY` (`open` | `paid` | `verified`). Production starts at `paid` and moves to `verified`. Each verified account gets 20 questions a day and 100 a week (`ASK_DAILY_LIMIT`, `ASK_WEEKLY_LIMIT`). `MODEL_DAILY_BUDGET_USD` (default 5) stops model calls for the day.
-- **Transcripts:** 24,790 validated Canary receipts; 27,373 machine-aligned video moments, none human-reviewed. Three extra Canary workers ran from 24 September, newest sessions first (5201, then the 51st legislature).
+- **Transcripts:** 24,790 validated Canary receipts; 31,070 machine-aligned video moments, none human-reviewed. Three extra Canary workers ran from 24 September, newest sessions first (5201, then the 51st legislature).
 - **Full-precision E5 vectors** copied off the LaunchPad node (they existed only there).
 
 ## Live pilot — 23 September 2026, evening

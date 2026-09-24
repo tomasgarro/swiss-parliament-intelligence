@@ -7,11 +7,12 @@ R=$(pwd)
 KEY=(-i "$R/data/pilot-launchpad-key" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$R/data/launchpad-known-hosts")
 HOST=nvidia@global.prd.ga.launchpad.nvidia.com
 BASE=/home/nvidia/swiss-parliament-intelligence/handoffs
-DIRS="cleisthenes-20260922-131027 next-20260924/shard-0 next-20260924/shard-1 next-20260924/shard-2"
+# Every worker directory: the original handoff and each shard (a shard without output yet is skipped).
+DIRS="cleisthenes-20260922-131027 next-20260924/shard-*"
 NAME=receipts-$(date +%Y%m%d-%H%M%S)
 ssh "${KEY[@]}" -p 12516 "$HOST" "set -e; S=~/checkpoints/$NAME; mkdir -p \$S
   M=~/checkpoints/.last-pull; [ -f \$M ] || touch -d '2026-09-24 14:00' \$M; touch ~/checkpoints/.this-pull
-  for d in $DIRS; do find $BASE/\$d/session-output -maxdepth 1 -regextype egrep -regex '.*/[0-9]+-canary\.json' -newer \$M -exec cp -l {} \$S/ \; ; done
+  cd $BASE; for d in $DIRS; do [ -d \$d/session-output ] || continue; find $BASE/\$d/session-output -maxdepth 1 -regextype egrep -regex '.*/[0-9]+-canary\.json' -newer \$M -exec cp -l {} \$S/ \; ; done
   ls \$S | wc -l; tar -czf \$S.tar.gz -C \$S .; sha256sum \$S.tar.gz | cut -d' ' -f1" > /tmp/pull.remote
 COUNT=$(head -1 /tmp/pull.remote); REMOTE_SHA=$(tail -1 /tmp/pull.remote)
 echo "receipts since last pull: $COUNT"

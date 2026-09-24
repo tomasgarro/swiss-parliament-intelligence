@@ -19,7 +19,7 @@ Figures as of 23 September 2026. They come from [Current status](STATUS.md), [Ho
 > LaunchPad allocation ended on 25 September, and NVIDIA's free hosted catalog, the planned fallback, was overloaded
 > (9 of 60 calls to Nemotron 3 Super succeeded in our test). The pipeline, the rule that code attaches every citation,
 > and the claim checks are unchanged. The app is now for verified accounts, with a daily and weekly question
-> allowance. Canary reached 24,790 transcribed recordings and 27,373 video moments. The tables below record the
+> allowance. Canary reached 24,790 transcribed recordings and 31,070 video moments. The tables below record the
 > hackathon setup.
 
 **Watch it:** [intro film (1:46)](https://youtu.be/HFW6X0y2rJw) · [app walkthrough (0:36)](https://youtu.be/hy-n3Teu_Wk)

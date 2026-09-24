@@ -65,7 +65,7 @@ Cleisthenes does that reading for you. You ask in your language; it searches the
 | Technology | What it does | What the reader gets |
 | --- | --- | --- |
 | **OpenAI gpt-6-luna** (since 24 Sep; NVIDIA Nemotron Nano 9B v2 on an H100 during the hackathon) | Understands the question, writes search terms, checks claims, writes the answer, resolves follow-ups | Clear answers in your language, built only from checked sources |
-| **NVIDIA Canary 1B v2** (H100) | Transcribed 24,790 chamber recordings with a timestamp per word | 27,373 quotes linked to their exact video moment |
+| **NVIDIA Canary 1B v2** (H100) | Transcribed 24,790 chamber recordings with a timestamp per word | 31,070 quotes linked to their exact video moment |
 | **multilingual-e5-large** (indexed on H100, queried on CPU) | Places 1,140,943 passages on a map of meaning | Questions find the right speeches in any language |
 | **Translation** (gpt-6-luna; NVIDIA Riva Translate during the hackathon) | Translates originals on request; any changed number is rejected | Original words plus a labelled translation |
 | **TypeSafe Jev** (shadow mode) | Independent claim-versus-source check | A second safety net against mistranslated claims |
