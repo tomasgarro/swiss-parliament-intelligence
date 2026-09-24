@@ -4,9 +4,13 @@
 import {inLanguage} from './answer-synthesis.mjs';
 
 const fold=v=>String(v||'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
-const REFERENCE=/\b(he|him|his|she|her|hers|they|them|their|it|its|this|that|these|those|the same|the initiative|the proposal|the law|the bill|the vote|the debate|the speaker|il|elle|lui|leur|leurs|ils|elles|son|sa|ses|cette|cet|ce projet|l.initiative|er|ihm|ihn|ihr|ihre|sein|seine|dieses?|diese[rn]?|lei|suo|sua|suoi|questo|questa|quello|quella)\b/;
+// Pronouns and demonstratives in the four national languages. Bare "il" is also the Italian article, so French "il"
+// counts only as a subject pronoun ("a-t-il", "qu'il", "il a …"); "the vote"/"the debate" name a topic, not a referent.
+const REFERENCE=/\b(he|him|his|she|her|hers|they|them|their|it|its|this|that|these|those|the same|the initiative|the proposal|the law|the bill|the speaker|elle|lui|leur|leurs|ils|elles|son|sa|ses|cette|cet|ce projet|l.initiative|celui|celles?|ceux|er|ihm|ihn|ihr|ihre[mnrs]?|ihnen|sie|sein|seine[mnrs]?|deren|dessen|dieses?|diese[rn]?|lei|loro|suo|sua|suoi|questo|questa|quello|quella)\b|-il\b|\bqu.il\b|\bil (?:a|avait|aurait|est|etait|dit|disait|pense|vote|votait|soutient|propose|defend)\b/;
+// Elliptical follow-ups carry no pronoun: "And the costs?", "What about the Greens?", "Und die Gegner?", "Et les opposants ?".
+const ELLIPTICAL=/^(?:(?:and|et|und|e|ed)\s+(?:the|les?|la|l'|des?|du|die|der|das|den|dem|i|gli|il|lo)\b|(?:and|et|und|e)\s+[\p{L}\p{N}'-]+(?:\s+[\p{L}\p{N}'-]+)?\s*\??$|(?:and\s+)?(?:what|how)\s+about\b|qu.en est-il\b|et (?:pour|concernant|quant a|du cote)\b|(?:und\s+)?was ist mit\b|wie steht es mit\b|e (?:per quanto riguarda|riguardo|quanto a)\b)/u;
 
-export function needsResolution(question){return REFERENCE.test(fold(question));}
+export function needsResolution(question){const q=fold(question).trim();return REFERENCE.test(q)||ELLIPTICAL.test(q);}
 
 // Validated, size-limited thread from the client: [{question, answer, person:{id,name}, proposal:{id,title}, speakers:[]}]
 export function cleanThread(thread){
@@ -22,6 +26,11 @@ export function cleanThread(thread){
 
 const words=v=>fold(v).match(/[\p{L}\p{N}]+/gu)||[];
 const mentions=(text,name)=>{const w=new Set(words(text));return words(name).some(p=>p.length>=3&&w.has(p));};
+// Did the rewrite bring in this thread entity? A distinctive word of its name or title that the question lacked; a
+// five-letter stem so an English rewrite still matches a French title ("neutrality" ~ "neutralité", "million" ~ "millions").
+const GENERIC=new Set('initiative iniziativa volksinitiative populaire popolare federale loi legge gesetz projet progetto vorlage contre pour sans avec'.split(' '));
+const stem=w=>/\d/.test(w)?w:w.slice(0,5);
+const adds=(rewrite,question,entity,min)=>{const had=new Set(words(question).map(stem)),has=new Set(words(rewrite).map(stem));return words(entity).some(w=>(w.length>=min||/\d/.test(w))&&!GENERIC.has(w)&&has.has(stem(w))&&!had.has(stem(w)));};
 
 export async function resolveQuestion(question,thread,{language='en',env,fetchImpl=fetch}={}){
  const turns=cleanThread(thread);
@@ -42,9 +51,12 @@ export async function resolveQuestion(question,thread,{language='en',env,fetchIm
   const text=(await r.json()).choices?.[0]?.message?.content||'',standalone=text.match(/"standalone"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
   const value=standalone&&JSON.parse(`"${standalone}"`).trim();
   if(!value||value.length>500||!inLanguage(value,language))return fallback();
+  // Resolved means the rewrite brought in a person, speaker or proposal from the thread, not merely new wording.
+  const added=last.some(t=>[t.person?.name,...t.speakers.map(s=>s.name)].some(n=>n&&adds(value,question,n,3))||t.proposal&&adds(value,question,t.proposal.title,4));
+  if(!added)return {question,resolved:false,method:'model'};
   // A person the rewrite does not name would be a scope the reader cannot see in "Understood as".
   const chosen=candidates.find(c=>c.personId===text.match(/"personId"\s*:\s*"(\d{1,6})"/)?.[1]);
-  return {question:value,resolved:value!==question,method:'model',person:chosen&&mentions(value,chosen.name)?{id:chosen.personId,name:chosen.name}:null,proposal};
+  return {question:value,resolved:true,method:'model',person:chosen&&mentions(value,chosen.name)?{id:chosen.personId,name:chosen.name}:null,proposal};
  }catch{return fallback();}
 }
 
