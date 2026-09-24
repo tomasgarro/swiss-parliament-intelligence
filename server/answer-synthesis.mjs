@@ -2,6 +2,7 @@
 // already passed per-source generation and entailment review, then check its language.
 // The model only ever sees verified claim text; it cannot introduce a source or a quotation.
 import {reviewClaims} from './claim-review.mjs';
+import {speakerRole} from './roles.mjs';
 
 const STOPWORDS={
  en:'the and of to in is that for on with as was are by this it be from has have not an or which their they who about said',
@@ -44,9 +45,8 @@ const STRUCTURE={
  explain:'Use at most three short titled sections, only when they help. Typical titles: what was argued, what would change, what remains uncertain.',
 };
 
-// Official Bulletin role codes, rendered for readers and for the synthesis prompt.
-const ROLES={Mit:'Member of the council',BR:'Federal Councillor',BPR:'President of the Swiss Confederation',VPBR:'Vice-President of the Federal Council',P:'President of the chamber','1VP':'First Vice-President of the chamber','2VP':'Second Vice-President of the chamber',BK:'Federal Chancellor'};
-export function speakerRole(code,council){const role=ROLES[String(code||'').replace(/-[MF]$/,'')];return role?(role==='Member of the council'&&council?`Member of the ${council}`:role):code||null;}
+// Official Bulletin role codes, rendered for readers and for the synthesis prompt (shared with claim extraction).
+export {speakerRole};
 export function buildCitations(claims,passages,store){
  const citations=[],byEvidence=new Map();
  for(const c of claims){
