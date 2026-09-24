@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {pilotApi as api} from '../services/pilotApi.js';
-import {ArrowUpRight,MagnifyingGlass,Play,Quotes} from '@phosphor-icons/react';
+import {ArrowUpRight,MagnifyingGlass,PencilSimple,Play,Quotes} from '@phosphor-icons/react';
 import PassageVideo from './PassageVideo.jsx';
 import {openProfile} from './navigation.js';
 import './cleisthenes-answer.css';
@@ -9,7 +9,7 @@ const LANGUAGE_LABEL={fr:'FR',de:'DE',it:'IT',rm:'RM',en:'EN'};
 // Official profile records are named by what they are, not by the person they describe.
 const RECORD_KINDS={profile:['Official directory entry','Fiche officielle'],terms:['Parliamentary terms','Mandats parlementaires'],committees:['Committees','Commissions'],votes:['Recorded votes','Votes enregistrés'],speaking:['Speaking record','Interventions'],occupation:['Declared occupation','Profession déclarée'],contact:['Published contact','Contact publié'],committee:['Committee','Commission'],party:['Party self-description','Description du parti']};
 export const sourceName=(c,fr)=>{if(c.sourceType==='parliamentary-speech')return c.speaker;const kind=RECORD_KINDS[String(c.passageId||'').split('-')[0]];return kind?kind[fr?1:0]:c.speaker;};
-const excerpt=(text,max=220)=>{const t=String(text||'').replace(/\s+/g,' ').trim();return t.length>max?t.slice(0,max).replace(/\s+\S*$/,'')+'…':t;};
+export const excerpt=(text,max=220)=>{const t=String(text||'').replace(/\s+/g,' ').trim();return t.length>max?t.slice(0,max).replace(/\s+\S*$/,'')+'…':t;};
 
 // Maps a typed citation back to the passage shape the evidence drawer and video player expect.
 export function citationPassage(answer,citation){
@@ -17,7 +17,18 @@ export function citationPassage(answer,citation){
  return {...(p||{}),id:citation.passageId,transcriptId:citation.transcriptId,speaker:citation.speaker,date:citation.date,text:p?.text||citation.quote,language:citation.originalLanguage,officialUrl:citation.officialUrl,personId:citation.personId,speakerFunction:citation.role,council:citation.council,sourceKind:citation.sourceType,...(citation.video?{video:citation.video}:{})};
 }
 
-export default function CleisthenesAnswer({answer,language,onCite,onFollowUp,disabled}){
+// What the server rewrote a follow-up into, with a one-click way back to the question as the reader wrote it.
+export function Understood({answer,t,onLiteral,disabled}){
+ if(!answer.resolvedQuestion)return null;
+ return <p className="answer-understood">{t('Understood as','Compris comme')}: <em>{answer.resolvedQuestion}</em>{onLiteral&&answer.originalQuestion&&<button type="button" className="evidence-original-toggle" disabled={disabled} onClick={onLiteral} title={t(`Ask “${answer.originalQuestion}” exactly as written`,`Poser « ${answer.originalQuestion} » telle quelle`)}>{t('Not what I meant','Ce n’est pas ma question')}</button>}</p>;
+}
+
+// A follow-up asks at once; the pencil puts it in the composer to adjust first.
+export function FollowUps({questions,onAsk,onEdit,disabled,t}){
+ return <div className="answer-followups"><p>{t('Continue exploring','Continuer l’exploration')}</p>{questions.map(q=><div className="answer-followup" key={q}><button type="button" disabled={disabled} onClick={()=>onAsk(q)}>{q}<ArrowUpRight size={13}/></button>{onEdit&&<button type="button" className="answer-followup-edit" disabled={disabled} onClick={()=>onEdit(q)} aria-label={t(`Edit before asking: ${q}`,`Modifier avant d’envoyer : ${q}`)} title={t('Edit before asking','Modifier avant d’envoyer')}><PencilSimple size={13}/></button>}</div>)}</div>;
+}
+
+export default function CleisthenesAnswer({answer,language,onCite,onFollowUp,onEditFollowUp,onLiteral,disabled}){
  const fr=language==='fr',t=(en,frText)=>fr?frText:en;
  const citations=answer.citations||[],number=id=>citations.findIndex(c=>c.id===id)+1;
  const day=value=>value?new Date(value).toLocaleDateString(fr?'fr-CH':'en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
@@ -33,7 +44,7 @@ export default function CleisthenesAnswer({answer,language,onCite,onFollowUp,dis
   {answer.mode==='prepared'&&<p className="answer-notice" role="note">{t(`Prepared answer, researched on ${day(answer.preparedAt)} with the same source checks as a live answer. Ask a follow-up to research further.`,`Réponse préparée le ${day(answer.preparedAt)}, avec les mêmes vérifications des sources qu’une réponse en direct. Posez une question de suivi pour approfondir.`)}</p>}
   {answer.mode==='recorded-replay'&&<p className="answer-notice" role="note">{t(`Recorded answer from ${day(answer.recordedAt)}: the live model is unavailable right now, so Cleisthenes is showing the verified answer it produced earlier for this exact question.`,`Réponse enregistrée le ${day(answer.recordedAt)} : le modèle en direct est indisponible, Cleisthenes affiche la réponse vérifiée produite plus tôt pour cette question.`)}</p>}
   {summary?.broadened&&<p className="answer-notice" role="note">{summary.broadened.to==='debate'?t(`Nothing in the selected passage answered this, so Cleisthenes widened the search to the whole debate${summary.broadened.title?` on “${summary.broadened.title}”`:''}.`,`L’extrait sélectionné ne répondait pas à la question : Cleisthenes a élargi la recherche à tout le débat${summary.broadened.title?` sur « ${summary.broadened.title} »`:''}.`):t('Nothing in the selected scope answered this, so Cleisthenes searched the whole imported record.','La sélection ne répondait pas à la question : Cleisthenes a cherché dans l’ensemble des documents importés.')}</p>}
-  {answer.resolvedQuestion&&<p className="answer-understood">{t('Understood as','Compris comme')}: <em>{answer.resolvedQuestion}</em></p>}
+  <Understood answer={answer} t={t} onLiteral={onLiteral} disabled={disabled}/>
   {answer.profile&&<ProfileCard profile={answer.profile} t={t}/>}
   {paragraph(answer.answer.lead,'lead','answer-lead')}
   {answer.answer.sections?.map((s,i)=><section key={i} className="answer-section"><h3>{s.title}</h3>{s.paragraphs.map((p,j)=>paragraph(p,j))}</section>)}
@@ -41,7 +52,7 @@ export default function CleisthenesAnswer({answer,language,onCite,onFollowUp,dis
   {citations.length>0&&<ol className="answer-sources" aria-label={t('Sources','Sources')}>{citations.map((c,i)=><li key={c.id}><button type="button" onClick={()=>cite(c)}><span className="answer-source-n">{i+1}</span><span><strong>{sourceName(c,fr)}</strong><small>{day(c.date)} · {LANGUAGE_LABEL[c.originalLanguage]||''}{c.title?` · ${excerpt(c.title,70)}`:''}{c.video?t(' · video',' · vidéo'):''}</small></span></button></li>)}</ol>}
   {answer.web&&<WebResearch web={answer.web} t={t}/>}
   {summary&&<ResearchSummary summary={summary} t={t}/>}
-  {answer.suggestedFollowUps?.length>0&&<div className="answer-followups"><p>{t('Continue exploring','Continuer l’exploration')}</p>{answer.suggestedFollowUps.map(q=><button type="button" key={q} disabled={disabled} onClick={()=>onFollowUp(q)}>{q}<ArrowUpRight size={13}/></button>)}</div>}
+  {answer.suggestedFollowUps?.length>0&&<FollowUps questions={answer.suggestedFollowUps} onAsk={onFollowUp} onEdit={onEditFollowUp} disabled={disabled} t={t}/>}
  </div>;
 }
 
