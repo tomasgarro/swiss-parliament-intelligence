@@ -1,5 +1,5 @@
 """Resumable official recording queue; CUDA_VISIBLE_DEVICES selects the batch GPU."""
-import json,sys,time,hashlib,re,shutil,subprocess,sqlite3
+import json,os,sys,time,hashlib,re,shutil,subprocess,sqlite3
 from pathlib import Path
 from urllib.parse import urlparse
 import requests
@@ -55,9 +55,12 @@ for index,job in enumerate(jobs):
         temp_receipt.write_text(json.dumps(payload,ensure_ascii=False))
         temp_receipt.replace(receipt)
         with db:db.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?,?,?,datetime("now"))',(ident,session,'complete',str(receipt),None))
+        # DISCARD_MEDIA=1 keeps disk bounded on long queues; the receipt already records the media hash.
+        if os.environ.get('DISCARD_MEDIA')=='1':media.unlink(missing_ok=True)
         print(json.dumps({'id':ident,'session':session,'completedQueuePosition':index+1,'total':len(jobs),'words':len(words)}),flush=True)
     except Exception as e:
         with db:db.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?,?,?,datetime("now"))',(ident,session,'failed',None,str(e)[:300]))
         print(json.dumps({'id':ident,'error':str(e)[:300]}),flush=True)
+        if os.environ.get('DISCARD_MEDIA')=='1':media.unlink(missing_ok=True)
         if str(e)=='DISK_RESERVE_REACHED':break
 db.close()

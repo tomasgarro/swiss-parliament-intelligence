@@ -55,8 +55,8 @@ function WordStatement({ text, className }: { text: string; className: string })
   );
 }
 
-export default function CivicLanding({onNavigate,user,onUser,language='en',reduceMotion=false}) {
-  const [accountOpen,setAccountOpen]=useState(false);
+export default function CivicLanding({onNavigate,user,onUser,language='en',reduceMotion=false,allowGuest=true,openAccount=false}) {
+  const [accountOpen,setAccountOpen]=useState(openAccount);
   const getStarted=()=>user?onNavigate(null,'dashboard'):setAccountOpen(true);
   const sceneRef = useRef<HTMLElement>(null);
   const [ready, setReady] = useState(false);
@@ -177,7 +177,7 @@ export default function CivicLanding({onNavigate,user,onUser,language='en',reduc
         <img src={midnightMark} alt="" className="loading-mark" />
         <span>Preparing the view</span>
       </div>
-      <LandingAccount open={accountOpen} onClose={()=>setAccountOpen(false)} onUser={u=>{onUser(u);setAccountOpen(false);onNavigate(null,"dashboard");}} onGuest={()=>{setAccountOpen(false);onNavigate(null,"dashboard");}}/>
+      <LandingAccount open={accountOpen} onClose={()=>setAccountOpen(false)} onUser={u=>{onUser(u);setAccountOpen(false);onNavigate(null,"dashboard");}} onGuest={allowGuest?()=>{setAccountOpen(false);onNavigate(null,"dashboard");}:undefined}/>
       <header className={`site-header nav-${navState}`}>
         <a href="#top" className="brand" aria-label="Cleisthenes, Swiss civic companion">
           <img src={cleisthenesBust} alt="" className="brand-bust" />

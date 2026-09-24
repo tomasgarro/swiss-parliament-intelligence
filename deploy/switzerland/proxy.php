@@ -15,6 +15,15 @@ $headers = ['Accept: application/json'];
 foreach (['CONTENT_TYPE'=>'Content-Type','HTTP_ORIGIN'=>'Origin','HTTP_COOKIE'=>'Cookie'] as $key=>$name) {
     if (isset($_SERVER[$key]) && !preg_match('/[\r\n]/', $_SERVER[$key])) $headers[]=$name.': '.$_SERVER[$key];
 }
+// The reader's address, vouched for by a secret shared with the API (PROXY_SHARED_SECRET), so sign-in rate limits
+// apply per reader rather than to this bridge. The secret lives outside the web root: ~/.swiss-proxy-key.
+$secretFile = dirname(__DIR__, 2).'/.swiss-proxy-key';
+$secret = is_readable($secretFile) ? trim((string)file_get_contents($secretFile)) : '';
+$client = $_SERVER['REMOTE_ADDR'] ?? '';
+if ($secret !== '' && preg_match('/^[0-9A-Za-z_-]{32,128}$/', $secret) && filter_var($client, FILTER_VALIDATE_IP)) {
+    $headers[] = 'X-Client-IP: '.$client;
+    $headers[] = 'X-Proxy-Key: '.$secret;
+}
 $ch = curl_init('https://cico.cardanoschool.org'.$uri);
 curl_setopt_array($ch, [CURLOPT_CUSTOMREQUEST=>$method, CURLOPT_RETURNTRANSFER=>true, CURLOPT_HTTPHEADER=>$headers,
     CURLOPT_FOLLOWLOCATION=>false, CURLOPT_CONNECTTIMEOUT=>10, CURLOPT_TIMEOUT=>110,

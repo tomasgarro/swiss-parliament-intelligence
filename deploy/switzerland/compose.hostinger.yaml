@@ -56,17 +56,26 @@ services:
       HYBRID_RETRIEVAL: ${HYBRID_RETRIEVAL:-off}
       SEMANTIC_WORKERS: ${SEMANTIC_WORKERS:-2}
       EMBEDDING_CACHE_DIR: /app/data/models
-      INFERENCE_BASE_URL: http://swiss-model-tunnel:4319/v1
-      INFERENCE_MODEL: nvidia/nvidia-nemotron-nano-9b-v2
-      TRANSLATION_BASE_URL: http://swiss-model-tunnel:4320
-      VSS_EMBED_BASE_URL: http://swiss-model-tunnel:4321
-      # When the LaunchPad tunnel is gone, model calls move to NVIDIA's hosted API catalog.
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
-      INFERENCE_PROVIDER: ${INFERENCE_PROVIDER:-}
-      INFERENCE_FALLBACK_MODEL: ${INFERENCE_FALLBACK_MODEL:-nvidia/nemotron-3-super-120b-a12b}
+      # Answers, follow-ups and translations run on OpenAI (the LaunchPad GPUs ended on 25 Sep 2026).
+      # OPENAI_API_KEY is set in the hosting panel only. MODEL_DAILY_BUDGET_USD stops model calls for the day.
+      INFERENCE_PROVIDER: ${INFERENCE_PROVIDER:-openai}
+      INFERENCE_BASE_URL: ${INFERENCE_BASE_URL:-https://api.openai.com/v1}
+      INFERENCE_MODEL: ${INFERENCE_MODEL:-gpt-6-luna}
+      INFERENCE_REASONING_EFFORT: ${INFERENCE_REASONING_EFFORT:-low}
+      TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-openai}
+      MODEL_DAILY_BUDGET_USD: ${MODEL_DAILY_BUDGET_USD:-5}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Who may use the app: open | paid (model routes need a verified account) | verified (the whole app).
+      ACCESS_POLICY: ${ACCESS_POLICY:-paid}
+      ASK_DAILY_LIMIT: ${ASK_DAILY_LIMIT:-20}
+      ASK_WEEKLY_LIMIT: ${ASK_WEEKLY_LIMIT:-100}
+      TRANSLATE_DAILY_LIMIT: ${TRANSLATE_DAILY_LIMIT:-60}
+      AUTH_RATE_LIMIT: ${AUTH_RATE_LIMIT:-20}
+      # Shared with proxy.php so the reader's own address (not the bridge's) keys the sign-in rate limit.
+      PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:-}
       WEB_RESEARCH_MODEL: ${WEB_RESEARCH_MODEL:-}
       WEB_RESEARCH_DAILY_LIMIT: ${WEB_RESEARCH_DAILY_LIMIT:-60}
+      WEB_RESEARCH_MAX_TOKENS: ${WEB_RESEARCH_MAX_TOKENS:-900}
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
       TYPESAFE_MODE: ${TYPESAFE_MODE:-off}
       FEEDBACK_RESEND_KEY: ${FEEDBACK_RESEND_KEY:-}
@@ -82,44 +91,15 @@ services:
       start_period: 1800s
   swiss-volume-init:
     image: alpine:3.22
-    command: [sh, -ec, "chown 1000:1000 /data /keys /releases"]
+    command: [sh, -ec, "chown 1000:1000 /data /releases"]
     restart: "no"
     network_mode: none
     cap_drop: [ALL]
     cap_add: [CHOWN]
     security_opt: [no-new-privileges:true]
-    volumes: [swiss-data:/data, swiss-model-key:/keys, swiss-releases:/releases]
-  swiss-model-tunnel:
-    image: alpine:3.22
-    restart: unless-stopped
-    security_opt: [no-new-privileges:true]
-    mem_limit: 128m
-    environment:
-      NVIDIA_KNOWN_HOSTS: ${NVIDIA_KNOWN_HOSTS}
-    volumes: [swiss-model-key:/keys]
-    networks: [swiss-private]
-    depends_on:
-      swiss-volume-init: {condition: service_completed_successfully}
-    entrypoint: [/bin/sh, -ec]
-    command:
-      - |
-        apk add --no-cache openssh-client >/dev/null
-        id tunnel >/dev/null 2>&1 || adduser -D -u 1000 tunnel
-        cat > /tmp/tunnel.sh <<'EOF'
-        set -eu
-        umask 077
-        if [ ! -f /keys/id_ed25519 ]; then ssh-keygen -q -t ed25519 -N '' -C swiss-pilot-production -f /keys/id_ed25519; fi
-        printf 'SWISS_TUNNEL_PUBLIC_KEY '
-        cat /keys/id_ed25519.pub
-        printf '%s\n' "$$NVIDIA_KNOWN_HOSTS" > /tmp/known_hosts
-        exec ssh -N -i /keys/id_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/tmp/known_hosts -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 0.0.0.0:4319:127.0.0.1:30081 -L 0.0.0.0:4320:127.0.0.1:30082 -L 0.0.0.0:4321:127.0.0.1:8017 -p 12516 swiss-model@global.prd.ga.launchpad.nvidia.com
-        EOF
-        chmod 755 /tmp/tunnel.sh
-        exec su -s /bin/sh tunnel -c '/bin/sh /tmp/tunnel.sh'
-
+    volumes: [swiss-data:/data, swiss-releases:/releases]
 volumes:
   swiss-data:
-  swiss-model-key:
   swiss-releases:
 networks:
   swiss-private:

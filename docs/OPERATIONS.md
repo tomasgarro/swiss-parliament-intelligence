@@ -29,7 +29,35 @@ A fresh clone has seeded example dossiers but not the operator's ignored databas
 
 ## Model connectivity
 
-The application expects OpenAI-compatible inference at `INFERENCE_BASE_URL`, using `INFERENCE_MODEL`. Production currently sets:
+Since 24 September 2026, production sets `INFERENCE_PROVIDER=openai`, `INFERENCE_BASE_URL=https://api.openai.com/v1`, `INFERENCE_MODEL=gpt-6-luna` and `TRANSLATION_PROVIDER=openai`. The adapter in `server/model-endpoint.mjs` turns the shared request shape into a reasoning-model request:
+- `max_completion_tokens` and `reasoning_effort`: `none` for short extraction steps, otherwise `INFERENCE_REASONING_EFFORT`, default `low`;
+- no `temperature` and no `/no_think` marker;
+- the key from `OPENAI_API_KEY`, which is set in the hosting panel only;
+- no fallback to another provider;
+- one retry on 429 or 5xx.
+
+It meters token use against `MODEL_DAILY_BUDGET_USD` (priced by `INFERENCE_PRICE_INPUT_PER_M` and `INFERENCE_PRICE_OUTPUT_PER_M`, plus `WEB_SEARCH_PRICE`). When the budget is spent it returns `DAILY_CAPACITY_REACHED`. `node --env-file=.env scripts/probe-openai.mjs` checks every model step against the live API.
+
+### Access and allowances
+
+`ACCESS_POLICY` decides who may use the API:
+- `open`: anyone (local and tests);
+- `paid`: a verified account for every route that calls a model or sends email;
+- `verified`: the whole app API.
+
+Health, sign-in and the account's own routes always answer, and the frontend follows the policy reported by `/api/health`.
+
+Verified means a confirmed email, or an OAuth identity that vouches for the address. Supabase "Confirm email" must be on.
+
+Each account has `ASK_DAILY_LIMIT` / `ASK_WEEKLY_LIMIT` questions (20 / 100) and `TRANSLATE_DAILY_LIMIT` translations. They are stored in `data/pilot.sqlite`, and prepared answers don't count.
+
+Rate limits are 120 reads and 20 writes a minute per account, and `AUTH_RATE_LIMIT` sign-in attempts a minute per address. `proxy.php` forwards the reader's address with `X-Proxy-Key` from `~/.swiss-proxy-key` on the shared hosting, and it must equal `PROXY_SHARED_SECRET`.
+
+Rollback: set `ACCESS_POLICY=open` or `paid` and restart the container.
+
+### GPU period (until 25 September 2026)
+
+During the hackathon the application used OpenAI-compatible inference on the LaunchPad GPUs. Production then set:
 
 ```text
 INFERENCE_MODEL=nvidia/nvidia-nemotron-nano-9b-v2

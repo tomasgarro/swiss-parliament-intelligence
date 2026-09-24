@@ -2,9 +2,12 @@ import {firstName,avatar,profileInput,requiresMfa} from './account-profile.mjs';
 import {randomBytes,createHash} from 'node:crypto';
 import {sessionVault} from './session-vault.mjs';
 import {accountStore} from './account-store.mjs';
+// A confirmed email address, or a sign-in provider that vouches for the address. Not every OAuth provider
+// does: a Discord account's email can be unverified, so the identity's own flag decides.
+export const emailVerified=u=>Boolean(u?.email_confirmed_at||u?.confirmed_at)||(u?.identities||[]).some(i=>i.provider!=='email'&&i.identity_data?.email_verified===true);
 export function createAuth(env=process.env,fetchImpl=fetch,options={}){
- const sessions=sessionVault(options.file),configured=Boolean(env.SUPABASE_URL&&env.SUPABASE_ANON_KEY),pending=new Map();
- const publicUser=(u,token)=>({id:u.id,email:u.email,name:u.user_metadata?.display_name||u.user_metadata?.full_name||'',firstName:firstName(u.user_metadata),avatar:avatar(u.user_metadata),mfaRequired:requiresMfa(u,token)});
+ const sessions=sessionVault(options.file),configured=Boolean(env.SUPABASE_URL&&env.SUPABASE_ANON_KEY),pending=new Map(),viewers=new Map();
+ const publicUser=(u,token)=>({id:u.id,email:u.email,name:u.user_metadata?.display_name||u.user_metadata?.full_name||'',firstName:firstName(u.user_metadata),avatar:avatar(u.user_metadata),mfaRequired:requiresMfa(u,token),emailVerified:emailVerified(u)});
  const profileItems=accountStore(env,fetchImpl);
  async function withPortrait(s){if(!s.rawUser.user_metadata?.pilot_avatar_custom||s.user.mfaRequired)return s.user;const rows=await profileItems(s,'profile','portrait');return {...s.user,avatar:avatar({pilot_avatar:rows[0]?.payload?.avatar||''})};}
  const sidFrom=c=>c?.match(/(?:^|;\s*)pilot_session=([a-f0-9]{64})(?:;|$)/)?.[1];
@@ -29,7 +32,15 @@ export function createAuth(env=process.env,fetchImpl=fetch,options={}){
  async enroll(cookie){const s=await session(cookie);return call('factors',{factor_type:'totp',friendly_name:'midnight.vote authenticator',issuer:'midnight.vote'},s.token);},
  async verifyFactor(cookie,id,code){if(!/^[a-f0-9-]{36}$/i.test(id)||!/^\d{6}$/.test(code))throw error('INVALID_CODE',400);const s=await session(cookie,true);if(!s.rawUser.factors?.some(f=>f.id===id))throw error('UNKNOWN_FACTOR',404);const c=await call('factors/'+id+'/challenge',{},s.token);const r=await call('factors/'+id+'/verify',{challenge_id:c.id,code},s.token);if(r.user.id!==s.user.id)throw error('AUTH_FAILED');return save(r,sidFrom(cookie));},
  async removeFactor(cookie,id){if(!/^[a-f0-9-]{36}$/i.test(id))throw error('INVALID_FACTOR',400);const s=await session(cookie);if(!s.rawUser.factors?.some(f=>f.id===id))throw error('UNKNOWN_FACTOR',404);await call('factors/'+id,null,s.token,'DELETE');return {status:'removed'};},
- async logoutAll(cookie){const s=await session(cookie);await call('logout?scope=global',{},s.token);sessions.deleteUser(s.user.id);return {status:'signed-out'};},
- async user(cookie=''){return withPortrait(await session(cookie,true));},logout(cookie=''){sessions.delete(sidFrom(cookie));},
+ async logoutAll(cookie){const s=await session(cookie);await call('logout?scope=global',{},s.token);sessions.deleteUser(s.user.id);viewers.clear();return {status:'signed-out'};},
+ async user(cookie=''){return withPortrait(await session(cookie,true));},logout(cookie=''){viewers.delete(sidFrom(cookie));sessions.delete(sidFrom(cookie));},
+ // The signed-in user for access checks on every API call: fresh for 60 s per session so each request doesn't
+ // reach Supabase, and served stale for up to 10 minutes while Supabase itself is failing (5xx or timeout).
+ async viewer(cookie=''){
+  const sid=sidFrom(cookie),hit=sid&&viewers.get(sid),now=Date.now();
+  if(hit&&now-hit.at<60000)return hit.user;
+  try{const s=await session(cookie);if(viewers.size>5000)viewers.clear();viewers.set(sid,{at:now,user:s.user});return s.user;}
+  catch(e){if(hit&&now-hit.at<600000&&(!e.status||e.status>=500)&&sessions.get(sid))return hit.user;viewers.delete(sid);throw e;}
+ },
  };
 }

@@ -23,12 +23,15 @@ import {probeInference,lastInferenceProbe} from './ai-readiness.mjs';
 import {createModelFetch} from './model-endpoint.mjs';
 import {resolveQuestion} from './conversation.mjs';
 import {findRecordedAnswer,replayRecorded,infrastructureFailure} from './demo-replay.mjs';
+import {findPreparedAnswer,servePrepared} from './prepared-answers.mjs';
 import {webResearch,webResearchConfigured,webResearchIntent} from './web-research.mjs';
 import {searchProposals} from './proposal-search.mjs';
 import {semanticIndexAvailable,semanticSearch} from './semantic-search.mjs';
 import {embedQuery} from './query-embedding.mjs';
 import {buildProfileCoverage} from './profile-coverage.mjs';
 import {readProcessingBacklog} from './processing-backlog.mjs';
+import {accessPolicy,requiresAccount,PAID_ROUTES,QUESTION_ROUTES,clientIp,createRateLimiter} from './access.mjs';
+import {createUsage} from './usage.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const fail=(code,status=400)=>Object.assign(new Error(code),{status});
 async function body(req,limit=16384) {
@@ -70,6 +73,8 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
   // Hybrid retrieval is opt-in until evaluated: question embedded on this CPU, int8 E5 index searched here.
   const semanticRetrieval=()=>env.HYBRID_RETRIEVAL==='on'&&semanticIndexAvailable(root,env)?(text,opts)=>embedQuery(text).then(vector=>semanticSearch(root,vector,{...opts,env})):undefined;
   async function answerWithFallback(b,onProgress){
+    const prepared=findPreparedAnswer(root,b,env);
+    if(prepared){try{onProgress?.({stage:'done'});}catch{}return withWebResearch(b,servePrepared(prepared),onProgress);}
     // Conversation memory: resolve "he", "that initiative" … against the thread before any research. A follow-up
     // stays on the thread's proposal ("what did she suggest?" means on that initiative); an off-topic answer from another debate would be worse than an honest gap.
     const resolution=await resolveQuestion(b.question,b.thread,{language:b.language||'en',env,fetchImpl});
@@ -82,7 +87,11 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
   }
   const publicBase=(env.PUBLIC_BASE_PATH||'').replace(/\/$/,'');
   if(publicBase&&!/^\/[A-Za-z0-9_-]+$/.test(publicBase))throw new Error('INVALID_PUBLIC_BASE_PATH');
-  const auth=createAuth(env,fetchImpl,{file:authFile}),items=accountStore(env,fetchImpl);const rates=new Map();
+  const auth=createAuth(env,fetchImpl,{file:authFile}),items=accountStore(env,fetchImpl);
+  const policy=accessPolicy(env);if(policy!=='open'&&!auth.configured)throw new Error('ACCESS_POLICY_REQUIRES_AUTH');
+  const limit=createRateLimiter();let usage;const allowance=()=>usage||(usage=createUsage(store.db,env));
+  // A question answered from the prepared library costs nothing, so it doesn't use the reader's allowance.
+  const charge=(viewer,kind,b)=>{if(viewer&&!(kind==='ask'&&b&&findPreparedAnswer(root,b,env)))allowance().consume(viewer.id,kind);};
   const cookie=(name,value,age)=>`${name}=${value}; HttpOnly; SameSite=Lax; Path=${publicBase||'/'}; Max-Age=${age}${env.PUBLIC_ORIGIN?.startsWith('https:')?'; Secure':''}`;
   const signed=(res,result)=>json(res,200,{...result.user,status:result.status||'signed-in'},{'Set-Cookie':cookie('pilot_session',result.sid,result.expires)});
   let profileImportBusy=false;
@@ -101,15 +110,21 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
       if(publicBase && !url.pathname.startsWith(publicBase+'/'))throw fail('NOT_FOUND',404);
       const p=url.pathname.slice(publicBase.length);
       if(req.method!=='GET' && !allowedRequestOrigin(req.headers.origin,env)) throw fail('ORIGIN_DENIED',403);
-      if(req.method!=='GET') {const key=req.socket.remoteAddress;const now=Date.now();for(const [k,v]of rates)if(v.until<now)rates.delete(k);const rate=rates.get(key)||{count:0,until:now+60000};rate.count++;rates.set(key,rate);if(rate.count>40)throw fail('RATE_LIMITED',429);}
-      if(p==='/api/feedback/challenge'&&req.method==='GET')return json(res,200,feedback.challenge(req.socket.remoteAddress));
-      if(p==='/api/feedback'&&req.method==='POST')return json(res,200,await feedback.send(await body(req),req.socket.remoteAddress));
+      const ip=clientIp(req,env);let viewer=null;
+      if(p.startsWith('/api/auth/')&&req.method!=='GET')limit('auth:'+ip,Number(env.AUTH_RATE_LIMIT)||20);
+      if(requiresAccount(policy,p)){
+        viewer=await auth.viewer(req.headers.cookie);if(!viewer.emailVerified)throw fail('EMAIL_NOT_VERIFIED',403);
+        limit('u:'+viewer.id+':'+(req.method==='GET'?'read':'write'),req.method==='GET'?120:20);
+        if(PAID_ROUTES.has(p)&&fetchImpl.capacityReached?.())throw fail('DAILY_CAPACITY_REACHED',503);
+      }else if(req.method!=='GET')limit('ip:'+ip,40);
+      if(p==='/api/feedback/challenge'&&req.method==='GET')return json(res,200,feedback.challenge(ip));
+      if(p==='/api/feedback'&&req.method==='POST')return json(res,200,await feedback.send(await body(req),ip));
       if(p==='/api/discovery/search'&&req.method==='POST'){const b=await body(req);if(typeof b.question!=='string'||b.question.length>500)throw fail('INVALID_SEARCH');return json(res,200,discover(store,par(),b));}
       if(p==='/api/dashboard'&&req.method==='GET')return json(res,200,await workspace.dashboard());
       if(p==='/api/agenda'&&req.method==='GET')return json(res,200,await workspace.agenda());
       if(p==='/api/feed'&&req.method==='GET')return json(res,200,workspace.feed());
       if(p==='/api/broadcast'&&req.method==='GET')return json(res,200,workspace.broadcast());
-      if(p==='/api/health'&&req.method==='GET')return json(res,200,{status:'ok',auth:auth.configured,ai:env.DEMO_REPLAY_FILE?'recorded-replay':env.INFERENCE_BASE_URL&&env.INFERENCE_MODEL?(lastInferenceProbe()?.state?'live-'+lastInferenceProbe().state:'configured-not-verified'):'editorial-extracts',aiCheckedAt:lastInferenceProbe()?.checkedAt||null,typesafe:env.TYPESAFE_MODE&&env.TYPESAFE_MODE!=='off'?(env.TYPESAFE_API_KEY?`${env.TYPESAFE_MODE}-configured-not-verified`:`${env.TYPESAFE_MODE}-missing-key`):'off',identity:'concept',videoCount:store.listDossiers().reduce((n,d)=>n+store.listEvidence(d.id).filter(e=>e.kind==='video').length,0)});
+      if(p==='/api/health'&&req.method==='GET')return json(res,200,{status:'ok',auth:auth.configured,access:policy,ai:env.DEMO_REPLAY_FILE?'recorded-replay':env.INFERENCE_BASE_URL&&env.INFERENCE_MODEL?(lastInferenceProbe()?.state?'live-'+lastInferenceProbe().state:'configured-not-verified'):'editorial-extracts',aiCheckedAt:lastInferenceProbe()?.checkedAt||null,typesafe:env.TYPESAFE_MODE&&env.TYPESAFE_MODE!=='off'?(env.TYPESAFE_API_KEY?`${env.TYPESAFE_MODE}-configured-not-verified`:`${env.TYPESAFE_MODE}-missing-key`):'off',identity:'concept',videoCount:store.listDossiers().reduce((n,d)=>n+store.listEvidence(d.id).filter(e=>e.kind==='video').length,0)});
       if(p==='/api/dossiers'&&req.method==='GET')return json(res,200,store.listDossiers());
       if(p.startsWith('/api/chambers/')&&req.method==='GET')return json(res,200,readChamber(p.slice(14),url.searchParams.get('version')||undefined));
       if(p==='/api/parliament'&&req.method==='GET')return json(res,200,overview());
@@ -118,7 +133,7 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
       if(p==='/api/parliament/profile-coverage'&&req.method==='GET')return json(res,200,buildProfileCoverage(par()));
       if(p==='/api/parliament/processing-backlog'&&req.method==='GET')return json(res,200,readProcessingBacklog(root));
       if(p==='/api/parliament/profile-refresh'&&req.method==='POST'){const b=await body(req);if(typeof b.personId!=='string'||!/^\d{1,6}$/.test(b.personId)||!par().person(b.personId))throw fail('UNKNOWN_PERSON',404);if(profileImportBusy)throw fail('IMPORT_BUSY',409);profileImportBusy=true;try{return json(res,200,await syncPerson(par(),b.personId,{fetchImpl,rawDir:path.join(root,'data/parliament/raw')}));}catch{throw fail('OFFICIAL_PROFILE_IMPORT_FAILED',502);}finally{profileImportBusy=false;}}
-      if(p==='/api/parliament/draft'&&req.method==='POST'){const b=await body(req);if(typeof b.topic!=='string'||!b.topic.trim()||b.topic.length>1500||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');const person=par().person(b.personId);if(!person)throw fail('NOT_FOUND',404);try{return json(res,200,await draftMessage(person,b,env,fetchImpl));}catch{throw fail('DRAFT_MODEL_UNAVAILABLE',502);}}
+      if(p==='/api/parliament/draft'&&req.method==='POST'){const b=await body(req);if(typeof b.topic!=='string'||!b.topic.trim()||b.topic.length>1500||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');const person=par().person(b.personId);if(!person)throw fail('NOT_FOUND',404);charge(viewer,'ask');try{return json(res,200,await draftMessage(person,b,env,fetchImpl));}catch{throw fail('DRAFT_MODEL_UNAVAILABLE',502);}}
       if(p.startsWith('/api/parliament/business/')&&req.method==='GET'){const d=par().business(p.split('/').pop());if(!d)throw fail('NOT_FOUND',404);return json(res,200,d);}
       if(p.startsWith('/api/parliament/person/')&&req.method==='GET'){const d=par().person(p.split('/').pop());if(!d)throw fail('NOT_FOUND',404);return json(res,200,d);}
       if(p==='/api/parliament/read'&&req.method==='GET')return json(res,200,par().readDebate(Object.fromEntries(url.searchParams)));
@@ -126,25 +141,28 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
       if(p==='/api/parliament/context'&&req.method==='GET'){const context=par().passageContext(url.searchParams.get('id')||'');if(!context)throw fail('NOT_FOUND',404);return json(res,200,context);}
       if(p==='/api/parliament/search'&&req.method==='GET')return json(res,200,par().search((url.searchParams.get('q')||'').slice(0,500),{businessId:url.searchParams.get('business'),personId:url.searchParams.get('person'),limit:20}));
       if(p==='/api/parliament/video-search'&&req.method==='POST'){const b=await body(req);if(typeof b.query!=='string'||!b.query.trim()||b.query.length>500||!['spoken','visual'].includes(b.mode))throw fail('INVALID_REQUEST');for(const k of ['personId','businessId'])if(b[k]!==undefined&&(typeof b[k]!=='string'||!/^\d+$/.test(b[k])))throw fail('INVALID_SCOPE');try{return json(res,200,await searchVideo({root:path.join(root,'data/parliament'),store:par(),query:b.query,mode:b.mode,personId:b.personId,businessId:b.businessId,env,fetchImpl}));}catch{throw fail('VIDEO_SEARCH_UNAVAILABLE',502);}}
-      if(p==='/api/parliament/translate'&&req.method==='POST'){const b=await body(req);if(typeof b.evidenceId!=='string'||!languages.includes(b.language))throw fail('INVALID_REQUEST');const passage=par().get('speech',b.evidenceId);if(!passage)throw fail('NOT_FOUND',404);try{return json(res,200,await translatePassage(passage,b.language,env,fetchImpl));}catch(e){throw fail(e.status===429?'TRANSLATOR_BUSY':'TRANSLATION_UNAVAILABLE',e.status===429?429:502);}}
-      if(p==='/api/health/ai'&&req.method==='GET')return json(res,200,{...await probeInference(env,networkFetch),route:fetchImpl.route?.()});
-      if(p==='/api/parliament/ask'&&req.method==='POST'){const b=await body(req);if(typeof b.question!=='string'||!b.question.trim()||b.question.length>500||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');try{return json(res,200,await answerWithFallback(b));}catch{throw fail('MODEL_UNAVAILABLE_OR_INVALID_OUTPUT',502);}}
+      if(p==='/api/parliament/translate'&&req.method==='POST'){const b=await body(req);if(typeof b.evidenceId!=='string'||!languages.includes(b.language))throw fail('INVALID_REQUEST');const passage=par().get('speech',b.evidenceId);if(!passage)throw fail('NOT_FOUND',404);charge(viewer,'translate');try{return json(res,200,await translatePassage(passage,b.language,env,fetchImpl));}catch(e){throw fail(e.status===429?'TRANSLATOR_BUSY':'TRANSLATION_UNAVAILABLE',e.status===429?429:502);}}
+      // The GPU probe goes straight to the endpoint; OpenAI needs the adapter's key and request shape.
+      if(p==='/api/health/ai'&&req.method==='GET')return json(res,200,{...await probeInference(env,env.INFERENCE_PROVIDER==='openai'?fetchImpl:networkFetch),route:fetchImpl.route?.(),spend:fetchImpl.spend?.()});
+      if(p==='/api/parliament/ask'&&req.method==='POST'){const b=await body(req);if(typeof b.question!=='string'||!b.question.trim()||b.question.length>500||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');charge(viewer,'ask',b);try{return json(res,200,await answerWithFallback(b));}catch{throw fail('MODEL_UNAVAILABLE_OR_INVALID_OUTPUT',502);}}
       // Same answer, streamed as newline-delimited JSON: research stages first, then the answer.
       if(p==='/api/parliament/ask/stream'&&req.method==='POST'){
         const b=await body(req);if(typeof b.question!=='string'||!b.question.trim()||b.question.length>500||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');
+        charge(viewer,'ask',b);
         res.writeHead(200,{'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store','X-Accel-Buffering':'no','X-Content-Type-Options':'nosniff'});
         const send=event=>{if(!res.writableEnded)res.write(JSON.stringify(event)+'\n');};
         try{send({type:'answer',answer:await answerWithFallback(b,stage=>send({type:'stage',...stage}))});}
         catch{send({type:'error',code:'MODEL_UNAVAILABLE_OR_INVALID_OUTPUT'});}
         return res.end();
       }
-      if(p==='/api/parliament/compare'&&req.method==='POST'){const b=await body(req);if(!Array.isArray(b.ids)||b.ids.length!==2||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');const pair=b.ids.map(id=>par().get('speech',id));if(pair.some(x=>!x))throw fail('NOT_FOUND',404);try{return json(res,200,await compareStatements(...pair,b.language||'en',env,fetchImpl));}catch{throw fail('MODEL_UNAVAILABLE_OR_INVALID_OUTPUT',502);}}
+      if(p==='/api/parliament/compare'&&req.method==='POST'){const b=await body(req);if(!Array.isArray(b.ids)||b.ids.length!==2||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');const pair=b.ids.map(id=>par().get('speech',id));if(pair.some(x=>!x))throw fail('NOT_FOUND',404);charge(viewer,'ask');try{return json(res,200,await compareStatements(...pair,b.language||'en',env,fetchImpl));}catch{throw fail('MODEL_UNAVAILABLE_OR_INVALID_OUTPUT',502);}}
       if(p.startsWith('/api/dossiers/')&&req.method==='GET'){const d=store.getDossier(decodeURIComponent(p.slice(14)));if(!d)throw fail('NOT_FOUND',404);return json(res,200,d);}
       if(p.startsWith('/api/evidence/')&&req.method==='GET'){const e=store.getEvidence(decodeURIComponent(p.slice(14)));if(!e)throw fail('NOT_FOUND',404);return json(res,200,e);}
       if(['/api/ask','/api/brief'].includes(p)&&req.method==='POST') {
         const b=await body(req);if(!languages.includes(b.language||'en')||!actions.includes(b.action||'explain')||typeof(b.question||'')!=='string'||(b.question||'').length>1000)throw fail('INVALID_REQUEST');
         const d=store.getDossier(b.dossierId);if(!d)throw fail('NOT_FOUND',404);
         if(p==='/api/brief'){if(!Array.isArray(b.evidenceIds)||b.evidenceIds.length<1||b.evidenceIds.length>30)throw fail('SELECT_EVIDENCE');const items=b.evidenceIds.map(id=>d.evidence.find(e=>e.id===id));if(items.some(e=>!e))throw fail('EVIDENCE_OUTSIDE_DOSSIER');return json(res,200,{markdown:markdownBrief(d,items,b.language)});}
+        charge(viewer,'ask');
         try{return json(res,200,await research(d,b,env,fetchImpl));}catch{throw fail('MODEL_UNAVAILABLE_OR_INVALID_OUTPUT',502);}
       }
       if(['/api/auth/login','/api/auth/signup'].includes(p)&&req.method==='POST') {
@@ -168,6 +186,7 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
       if(p==='/api/auth/callback'&&req.method==='GET'){const state=req.headers.cookie?.match(/(?:^|;\s*)pilot_oauth=([a-f0-9]{64})(?:;|$)/)?.[1];let cookies=[cookie('pilot_oauth','',0)],status='cancelled';try{if(state&&url.searchParams.get('code')){const r=await auth.exchange(url.searchParams.get('code'),state);cookies.push(cookie('pilot_session',r.sid,r.expires));status=r.mode==='recovery'?'reset':'complete';}}catch{status='failed';}res.writeHead(303,{Location:`${publicBase}/?view=dashboard&auth=${status}`,'Set-Cookie':cookies});return res.end();}
       if(p==='/api/auth/logout'&&req.method==='POST'){auth.logout(req.headers.cookie);return json(res,200,{status:'signed-out'},{'Set-Cookie':`pilot_session=; HttpOnly; SameSite=Lax; Path=${publicBase||'/'}; Max-Age=0`});}
       if(p==='/api/me'&&req.method==='GET')return json(res,200,await auth.user(req.headers.cookie));
+      if(p==='/api/me/usage'&&req.method==='GET'){const v=await auth.viewer(req.headers.cookie);return json(res,200,{access:policy,questions:allowance().summary(v.id,'ask'),translations:allowance().summary(v.id,'translate')});}
       if(p.startsWith('/api/me/items/')&&['GET','POST','DELETE'].includes(req.method)){const s=await auth.session(req.headers.cookie),kind=p.slice('/api/me/items/'.length),b=req.method==='GET'?{}:await body(req,190000),id=req.method==='GET'?url.searchParams.get('id')||undefined:b.id;if(b.accountId&&b.accountId!==s.user.id)throw fail('ACCOUNT_CHANGED',409);if(req.method!=='GET'&&!id)throw fail('ITEM_ID_REQUIRED');return json(res,200,await items(s,kind,id,req.method,b.payload));}
       if(p==='/api/me/saved'){
         const session=await auth.session(req.headers.cookie),user=session.user;
@@ -189,7 +208,7 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
     }catch(error){
       // Unexpected failures are logged (method, path, message; never the body) so production is debuggable.
       if(!error.status)console.error('API_ERROR',req.method,String(req.url).split('?')[0],error?.message);
-      json(res,error.status||500,{error:error.status?error.message:'INTERNAL_ERROR'});}
+      json(res,error.status||500,{error:error.status?error.message:'INTERNAL_ERROR',...(error.status&&error.details?error.details:{})});}
   });
   const agendaTimer=setInterval(()=>workspace.agenda().catch(()=>{}),3600000);agendaTimer.unref();
   server.on('close',()=>{clearInterval(agendaTimer);parliament?.close();auth.close();});

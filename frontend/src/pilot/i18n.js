@@ -1,5 +1,5 @@
 const en={
- replay:'Recorded NVIDIA response · not live',
+ replay:'Recorded response · not live',
  watchOfficial:'Watch the official explanation',federalExplainer:'Federal Council explainer · 2025',publisherCaption:'Official publisher caption',videoCoverage:'Official e-ID explainers in DE, FR, IT and RM. These are historical public-information videos, not parliamentary debate footage.',
   pilot:'SWISS CIVIC COMPANION',explore:'Explore',research:'Research view',saved:'Saved',signin:'Sign in',signout:'Sign out',language:'Language',
   eyebrow:'PUBLIC QUESTIONS. YOUR OWN PERSPECTIVE.',headline:'Make sense of\nwhat we vote on.',intro:'Understand the issues. Hear the arguments. Go back to the source. A quieter way to find your own perspective on Swiss democracy.',
@@ -18,7 +18,7 @@ const en={
   sourceLanguage:'Source language',document:'Document',video:'Video',play:'Play cited moment',videoError:'Video could not be loaded. Open the original source instead.',account:'Account',accountError:'Sign-in failed. Check your credentials or confirm your email.',
 };
 const fr={...en,
- replay:'Réponse NVIDIA enregistrée · pas en direct',
+ replay:'Réponse enregistrée · pas en direct',
  watchOfficial:'Voir l’explication officielle',federalExplainer:'Explication du Conseil fédéral · 2025',publisherCaption:'Sous-titre officiel de l’éditeur',videoCoverage:'Vidéos officielles sur l’e-ID en DE, FR, IT et RM. Il s’agit de vidéos explicatives historiques, et non de débats parlementaires.',
   pilot:'COMPAGNON CIVIQUE SUISSE',explore:'Explorer',research:'Vue recherche',saved:'Enregistrés',signin:'Se connecter',signout:'Se déconnecter',language:'Langue',
   eyebrow:'DES QUESTIONS PUBLIQUES. VOTRE PROPRE REGARD.',headline:'Comprendre\nce que l’on vote.',intro:'Comprendre les enjeux. Comparer les arguments. Revenir aux sources. Une approche sereine pour vous forger votre propre opinion sur la démocratie suisse.',

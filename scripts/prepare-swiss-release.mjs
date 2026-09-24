@@ -30,7 +30,7 @@ for(const name of ['parliament.sqlite','public-embeddings.sqlite','pilot.sqlite'
  clean.close();
 }
 mkdirSync(data+'/parliament',{recursive:true});
-for(const file of ['parliament/video-alignments.json','parliament/archive-manifest.json','public-session-queue-manifest.json'])if(existsSync('data/'+file))copyFileSync('data/'+file,data+'/'+file);
+for(const file of ['parliament/video-alignments.json','parliament/prepared-answers.json','parliament/archive-manifest.json','public-session-queue-manifest.json'])if(existsSync('data/'+file))copyFileSync('data/'+file,data+'/'+file);
 for(const session of ['5213','5214','5215']){
  mkdirSync(data+'/parliament/session-'+session,{recursive:true});copyFileSync('data/parliament/session-'+session+'/media-jobs.json',data+'/parliament/session-'+session+'/media-jobs.json');
  for(const file of readdirSync('data/parliament/session-'+session))if(/^\d+-(asr|canary|embeddings|vss)\.json$/.test(file))copyFileSync('data/parliament/session-'+session+'/'+file,data+'/parliament/session-'+session+'/'+file);

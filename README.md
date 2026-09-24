@@ -64,18 +64,19 @@ Cleisthenes does that reading for you. You ask in your language; it searches the
 
 | Technology | What it does | What the reader gets |
 | --- | --- | --- |
-| **NVIDIA Nemotron Nano 9B v2** (NIM on H100) | Understands the question, writes search terms, checks claims, writes the answer, resolves follow-ups | Clear answers in your language, built only from checked sources |
-| **NVIDIA Canary 1B v2** (H100) | Transcribes chamber video with a timestamp per word | 14,556 quotes linked to their exact video moment |
+| **OpenAI gpt-6-luna** (since 24 Sep; NVIDIA Nemotron Nano 9B v2 on an H100 during the hackathon) | Understands the question, writes search terms, checks claims, writes the answer, resolves follow-ups | Clear answers in your language, built only from checked sources |
+| **NVIDIA Canary 1B v2** (H100) | Transcribed 24,790 chamber recordings with a timestamp per word | 27,373 quotes linked to their exact video moment |
 | **multilingual-e5-large** (indexed on H100, queried on CPU) | Places 1,140,943 passages on a map of meaning | Questions find the right speeches in any language |
-| **NVIDIA Riva Translate** | Translates originals on request | Original words plus a labelled translation |
+| **Translation** (gpt-6-luna; NVIDIA Riva Translate during the hackathon) | Translates originals on request; any changed number is rejected | Original words plus a labelled translation |
 | **TypeSafe Jev** (shadow mode) | Independent claim-versus-source check | A second safety net against mistranslated claims |
 | **Web search** | Only for news and upcoming sessions | Separate, labelled findings with links; never a citation |
 | **Deterministic code** | Quotes, dates, roles, vote counts, citations, refusals | Every number and quotation is exact and traceable |
 
 ### Built on NVIDIA
 
-- **Live answers:** Nemotron Nano 9B v2 as an NVIDIA NIM on an H100 (NVIDIA LaunchPad). When the GPU allocation ends, answers switch automatically to NVIDIA's hosted API catalog (Nemotron 3 Super 120B), tested end to end.
-- **Bulk reading on the second H100:** the E5 meaning index of 1,140,943 passages in under ten minutes, and Canary speech recognition (11,092 recordings so far, still running).
+- **Live answers during the hackathon:** Nemotron Nano 9B v2 as an NVIDIA NIM on an H100 (NVIDIA LaunchPad). Since 24 September they run on OpenAI gpt-6-luna: the GPU allocation ended on the 25th, and NVIDIA's free hosted catalog was too overloaded to carry a researched answer (9 of 60 calls succeeded in our test).
+- **Bulk reading on the H100s:** the E5 meaning index of 1,140,943 passages in under ten minutes, and Canary speech recognition (24,790 recordings by 24 September; the last batches ran until the allocation ended).
+- **Access:** the app is for verified accounts (email link, password, Google or Discord), with a daily and weekly question allowance per account.
 - **After the hackathon:** search runs on an ordinary CPU (a 1.2 GB index, about one second per search over the whole archive). Nothing already processed is lost.
 
 ## Coverage and limits (23 September 2026)

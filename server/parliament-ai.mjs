@@ -167,7 +167,7 @@ async function answerParliamentOnce(store,input,env,fetchImpl=fetch,options={}){
   progress('writing',{claims:out.claims.length});
   try{
    const synthesis=await synthesizeAnswer({question:input.question,language,claims:out.claims,passages,store,env,fetchImpl});
-   if(synthesis.status==='ok')Object.assign(out,{answer:synthesis.answer,citations:synthesis.citations,suggestedFollowUps:synthesis.suggestedFollowUps,intent:synthesis.intent,synthesis:{status:'ok',languageRepair:synthesis.languageRepair,withheldParagraphs:synthesis.withheldParagraphs}});
+   if(synthesis.status==='ok')Object.assign(out,{answer:synthesis.answer,citations:synthesis.citations,suggestedFollowUps:synthesis.suggestedFollowUps,intent:synthesis.intent,synthesis:{status:'ok',languageRepair:synthesis.languageRepair,withheldParagraphs:synthesis.withheldParagraphs,leadReplaced:synthesis.leadReplaced}});
    else out.synthesis={status:synthesis.status};
   }catch{out.synthesis={status:'unavailable'};}
   // Never return mixed-language prose: without a verified synthesis, keep only claims in the answer language.
@@ -175,7 +175,8 @@ async function answerParliamentOnce(store,input,env,fetchImpl=fetch,options={}){
  }
  out.researchSummary=researchSummary({scopeTitle:options.scopeTitle,retrieval,candidates,passages,citations:out.citations||[],withheld:(out.withheldClaims||0)+(out.synthesis?.withheldParagraphs||0),coverage:options.coverage});
  out.latencyMs=Math.round(performance.now()-started);progress('done');
- if(out.status==='ok')remember(answerCache,key,{at:Date.now(),answer:out});return out;
+ // A degraded answer (writing step unavailable) is not cached, so asking again can still get the full answer.
+ if(out.status==='ok'&&out.synthesis?.status!=='unavailable')remember(answerCache,key,{at:Date.now(),answer:out});return out;
 }
 export function assessComparability(a,b){
  if(!a||!b)throw new Error('UNKNOWN_PASSAGE');

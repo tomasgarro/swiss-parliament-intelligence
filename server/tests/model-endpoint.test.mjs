@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createModelFetch,DEFAULT_CATALOG_MODEL} from '../model-endpoint.mjs';
+import {createModelFetch,createRateLimiter,DEFAULT_CATALOG_MODEL} from '../model-endpoint.mjs';
 
 test('forced catalog rewrites the model, key and thinking switch; other URLs pass through',async()=>{
  const calls=[];const fetchImpl=async(url,options)=>{calls.push({url,options});return {status:200,ok:true};};
@@ -25,4 +25,12 @@ test('an overloaded catalog model is retried on the secondary model',async()=>{
  const f=createModelFetch({INFERENCE_BASE_URL:'http://127.0.0.1:4319/v1',NVIDIA_API_KEY:'k',INFERENCE_PROVIDER:'nvidia-catalog'},fetchImpl);
  const r=await f('http://127.0.0.1:4319/v1/chat/completions',{method:'POST',body:'{}'});
  assert.equal(r.status,200);assert.equal(models.length,2);assert.notEqual(models[0],models[1]);
+});
+
+test('the catalog limiter spaces calls under the per-minute cap and honours an abort while waiting',async()=>{
+ let t=0;const slept=[];const limit=createRateLimiter(2,{now:()=>t,sleep:async ms=>{slept.push(ms);t+=ms;}});
+ await limit();await limit();assert.equal(t,0);
+ await limit();assert.ok(t>=60000,'third call waits for the window');assert.ok(slept.every(ms=>ms<=1000),'waits in short steps');
+ const controller=new AbortController();controller.abort(new Error('gave up'));
+ await assert.rejects(limit(controller.signal),/gave up/);
 });

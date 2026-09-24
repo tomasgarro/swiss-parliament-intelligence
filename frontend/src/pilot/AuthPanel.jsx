@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {GoogleLogo,AppleLogo,DiscordLogo,Eye,EyeSlash,EnvelopeSimpleOpen} from '@phosphor-icons/react';
+import {GoogleLogo,DiscordLogo,Eye,EyeSlash,EnvelopeSimpleOpen} from '@phosphor-icons/react';
 import {pilotApi as api} from '../services/pilotApi.js';
 import './account.css';
 
@@ -14,7 +14,7 @@ export default function AuthPanel({user,onUser,onClose,initialMode='magic',onGue
  if(emailSent)return <div className="auth-panel account-refined account-confirmation"><img className="account-guide" src={import.meta.env.BASE_URL+'images/cleisthenes.png'} alt=""/><EnvelopeSimpleOpen className="account-confirmation-icon" size={34} aria-hidden="true"/><h2 id="account-title">{emailSent.kind!=='recovery'?'Check your email':'Recovery email sent'}</h2><p>We sent a private link to <strong>{emailSent.email}</strong>. Open it in this browser within one hour.</p><p className="account-confirmation-detail">{emailSent.kind==='magic'?'Click the link to sign in securely. No password needed.':emailSent.kind==='signup'?'The link returns you to midnight.vote and completes your account.':'The link returns you to midnight.vote so you can choose a new password.'}</p>{emailSent.kind==='signup'&&<button className="account-submit" onClick={()=>change('login')}>Sign in after verifying</button>}<button className="account-text-button" onClick={()=>change(emailSent.kind==='magic'?'magic':emailSent.kind==='signup'?'signup':'recover')}>Use another email address</button>{onGuest&&<button className="account-guest" onClick={onGuest}>Explore without an account →</button>}</div>;
 
  const intro=mode==='magic'?'We’ll email you a secure sign-in link. New here? This also creates your account.':mode==='recover'?'Enter the email address associated with your account.':mode==='reset'?'Use at least eight characters for your new password.':'';
- const socialMethods=[['google','Google',GoogleLogo],['apple','Apple',AppleLogo],['discord','Discord',DiscordLogo]];
+ const socialMethods=[['google','Google',GoogleLogo],['discord','Discord',DiscordLogo]];
  return <div className="auth-panel account-refined"><img className="account-guide" src={import.meta.env.BASE_URL+'images/cleisthenes.png'} alt=""/><h2 id="account-title">{user&&mode!=='reset'?'Your account':titles[mode]}</h2>
  {user&&mode!=='reset'?<><p>{user.firstName||user.name?.split(/\s+/)[0]||user.email}</p><small>{user.email}</small><button className="account-submit" disabled={busy} onClick={async()=>{setBusy(true);try{await api.logout();onUser(null);onClose();}catch{setNote('Sign-out failed. Please try again.');}finally{setBusy(false);}}}>Sign out</button></>:<>
  {intro&&<p className="account-intro">{intro}</p>}

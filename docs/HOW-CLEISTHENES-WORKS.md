@@ -15,6 +15,13 @@ Figures as of 23 September 2026. They come from [Current status](STATUS.md), [Ho
 | **14,556** | quotes linked to their exact video second |
 | **2 × H100** | one serves answers, one did the bulk reading |
 
+> **Update, 24 September 2026.** Answers, follow-ups and translations now run on **OpenAI gpt-6-luna**. The
+> LaunchPad allocation ended on 25 September, and NVIDIA's free hosted catalog, the planned fallback, was overloaded
+> (9 of 60 calls to Nemotron 3 Super succeeded in our test). The pipeline, the rule that code attaches every citation,
+> and the claim checks are unchanged. The app is now for verified accounts, with a daily and weekly question
+> allowance. Canary reached 24,790 transcribed recordings and 27,373 video moments. The tables below record the
+> hackathon setup.
+
 **Watch it:** [intro film (1:46)](https://youtu.be/HFW6X0y2rJw) · [app walkthrough (0:36)](https://youtu.be/hy-n3Teu_Wk)
 
 **On this page:**
@@ -234,11 +241,11 @@ We always quote the Bulletin, never the transcript; the transcript only supplies
 
 | | Until 25 September | After 25 September |
 | --- | --- | --- |
-| Answers | Nemotron Nano 9B on GPU 0 · about 20 s | Nemotron 3 Super 120B on NVIDIA's API catalog · 25–48 s · tested end to end; the key is configured on the VPS |
+| Answers | Nemotron Nano 9B on GPU 0 · about 20 s | OpenAI gpt-6-luna · 27–36 s in our first local test (the NVIDIA catalog fallback proved too overloaded on 24 Sep) |
 | Search + meaning index | VPS CPU | Unchanged |
 | Transcripts + video moments | Kept on the VPS | Unchanged |
 | New transcription | Running on GPU 1 | Paused until we have GPU time again |
-| Translation | Riva on GPU 1 | Not connected to a hosted service yet |
+| Translation | Riva on GPU 1 | gpt-6-luna, with the same number checks |
 
 ## 6. How we built it
 
@@ -286,7 +293,7 @@ Rules we kept throughout: no invented numbers or citations; machine output alway
 
 **What did the GPUs actually do?** GPU 1 read the archive once: the meaning index in under ten minutes and 11,092 recordings transcribed. GPU 0 serves every live answer.
 
-**What happens after the hackathon?** Answers move to NVIDIA's hosted catalog. Search, transcripts and video moments keep running on our CPU server.
+**What happens after the hackathon?** Answers moved to OpenAI gpt-6-luna on 24 September, because NVIDIA's free hosted catalog was overloaded. Search, transcripts and video moments keep running on our CPU server. The app is for verified accounts, each with a question allowance.
 
 **Where's Midnight in this?** Not in the pilot. It's the next step: proving you're eligible for a citizen poll without revealing who you are.
 
