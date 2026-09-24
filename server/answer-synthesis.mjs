@@ -2,6 +2,7 @@
 // already passed per-source generation and entailment review, then check its language.
 // The model only ever sees verified claim text; it cannot introduce a source or a quotation.
 import {reviewClaims} from './claim-review.mjs';
+import {speakerRole,roleGender} from './roles.mjs';
 
 const STOPWORDS={
  en:'the and of to in is that for on with as was are by this it be from has have not an or which their they who about said',
@@ -44,9 +45,9 @@ const STRUCTURE={
  explain:'Use at most three short titled sections, only when they help. Typical titles: what was argued, what would change, what remains uncertain.',
 };
 
-// Official Bulletin role codes, rendered for readers and for the synthesis prompt.
-const ROLES={Mit:'Member of the council',BR:'Federal Councillor',BPR:'President of the Swiss Confederation',VPBR:'Vice-President of the Federal Council',P:'President of the chamber','1VP':'First Vice-President of the chamber','2VP':'Second Vice-President of the chamber',BK:'Federal Chancellor'};
-export function speakerRole(code,council){const role=ROLES[String(code||'').replace(/-[MF]$/,'')];return role?(role==='Member of the council'&&council?`Member of the ${council}`:role):code||null;}
+// Official Bulletin role codes, rendered for readers and for the synthesis prompt (shared with claim extraction).
+// Each citation carries the speaker's personId and recorded gender so the next turn can resolve "she" to that speaker.
+export {speakerRole};
 export function buildCitations(claims,passages,store){
  const citations=[],byEvidence=new Map();
  for(const c of claims){
@@ -54,7 +55,7 @@ export function buildCitations(claims,passages,store){
   const p=passages.find(x=>'parl-'+x.id===c.evidenceId||x.evidenceId===c.evidenceId||x.id===c.evidenceId);if(!p)continue;
   const business=p.businessId&&store?.get?.('business',p.businessId);
   const id='c'+(citations.length+1);byEvidence.set(c.evidenceId,id);
-  citations.push({id,evidenceId:c.evidenceId,passageId:p.id,sourceType:p.sourceKind||'parliamentary-speech',title:business?.title||null,businessId:p.businessId||null,businessNumber:business?.number||null,speaker:p.speaker||null,role:speakerRole(p.speakerFunction,p.council),council:p.council||null,group:p.group||null,personId:p.personId||null,date:p.date||null,originalLanguage:p.language||null,quote:p.text,officialUrl:p.officialUrl||p.sourceUrl||null,transcriptId:p.transcriptId||null,
+  citations.push({id,evidenceId:c.evidenceId,passageId:p.id,sourceType:p.sourceKind||'parliamentary-speech',title:business?.title||null,businessId:p.businessId||null,businessNumber:business?.number||null,speaker:p.speaker||null,role:speakerRole(p.speakerFunction,p.council),council:p.council||null,group:p.group||null,personId:p.personId||null,gender:roleGender(p.speakerFunction),date:p.date||null,originalLanguage:p.language||null,quote:p.text,officialUrl:p.officialUrl||p.sourceUrl||null,transcriptId:p.transcriptId||null,
    ...(p.video?.url&&Number.isFinite(p.video.start)?{video:{url:p.video.url,start:p.video.start,end:p.video.end,timingReview:'machine-aligned-unreviewed'}}:{}),
    reviewState:p.reviewState||'official-bulletin-import'});
  }

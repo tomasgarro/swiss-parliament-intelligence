@@ -2,11 +2,13 @@ import {ANSWER_POLICY_VERSION,topicSearchText,votingAdviceRequest} from './answe
 import {overviewEvidence} from './overview-evidence.mjs';
 import {research} from './research.mjs';
 import {answerProfile} from './profile-ai.mjs';
-import {unsupportedProposalAttribution} from './attribution-guard.mjs';
+import {unsupportedProposalAttribution,unsupportedFederalCouncilAttribution} from './attribution-guard.mjs';
 import {reviewClaims} from './claim-review.mjs';
 import {publicTypeSafeReview,reviewClaimsWithTypeSafe} from './typesafe-review.mjs';
 import {synthesizeAnswer,researchSummary,inLanguage} from './answer-synthesis.mjs';
-export function speechEvidence(s){return {id:'parl-'+s.id,text:s.text,language:s.language,kind:'document',sourceKind:'parliamentary-speech',speaker:s.speaker,speakerRole:s.speakerFunction||s.council,date:s.date,attribution:`${s.speaker} · ${s.date||'date unavailable'} · ${s.speakerFunction||s.council||''}`,source:{url:s.officialUrl,title:'Official Bulletin'},reviewState:s.reviewState};}
+import {speakerRole} from './roles.mjs';
+// Extraction and review see the decoded role ("National Councillor", "Federal Councillor"), never a raw Bulletin code.
+export function speechEvidence(s){const role=speakerRole(s.speakerFunction,s.council)||s.council;return {id:'parl-'+s.id,text:s.text,language:s.language,kind:'document',sourceKind:'parliamentary-speech',speaker:s.speaker,speakerRole:role,date:s.date,attribution:`${s.speaker} · ${s.date||'date unavailable'} · ${role||''}`,source:{url:s.officialUrl,title:'Official Bulletin'},reviewState:s.reviewState};}
 const queryCache=new Map(),answerCache=new Map();
 const remember=(map,key,value)=>{if(map.size>=128)map.delete(map.keys().next().value);map.set(key,value);};
 export async function multilingualQueries(question,env,fetchImpl=fetch){
@@ -45,6 +47,20 @@ export function resolveProposal(store,proposal){
  if(!top||(wanted.length===1?top.score<6:top.score<9||top.matched/wanted.length<0.5))return null;
  return top.business;
 }
+// A follow-up that names a proposal of its own ("And the neutrality initiative?", "l'initiative « Stop au blackout »")
+// must not stay locked to the thread's proposal. The model gives French title words, so a question in any language
+// matches the official title; without a model only a quoted title counts. Most follow-ups name no proposal at all
+// ("what did she say?") and skip the model call.
+const PROPOSAL_WORDS=/initiati|iniziativ|referend|\b(loi|law|bill|gesetz|legge|vorlage|projet|proposal|budget|motion|postulat)\b|[«“„"‘]|(?:^|\s)'/;
+const quotedTitles=q=>[...String(q).matchAll(/[«“„"]\s*([^«»“”„"]{3,160}?)\s*[»”“"]|(?:^|[\s(])['‘]([^'‘’]{3,160}?)['’](?=[\s?.,!;:)]|$)/gu)].map(m=>m[1]||m[2]);
+export async function namesOtherProposal(question,proposal,{store,env,fetchImpl=fetch}={}){
+ if(!proposal?.title||!PROPOSAL_WORDS.test(fold(question)))return false;
+ const own=new Set(titleTokens(proposal.title)),differs=words=>{const t=titleTokens(words);return t.length>0&&t.filter(x=>own.has(x)).length<t.length/2;};
+ const named=env?.INFERENCE_BASE_URL&&env?.INFERENCE_MODEL?await proposalReference(question,env,fetchImpl).catch(()=>null):null;
+ if(named===null)return quotedTitles(question).some(differs);
+ const business=named&&store?resolveProposal(store,named):null;
+ return business?String(business.id)!==String(proposal.id):Boolean(named)&&differs(named);
+}
 // Every passage of a resolved proposal is on topic, so rank for substance: overlap with the question's
 // terms in any language, and argued speeches over one-line procedural remarks.
 export function rankWithinProposal(pool,texts){
@@ -70,6 +86,8 @@ export function selectPassages(scored,limit=4,{distinctBusiness=false}={}){
  if(distinctBusiness)for(const s of ranked){if(chosen.length===limit)break;if(!s.businessId||debates.has(s.businessId)||speakers.has(s.speaker))continue;chosen.push(s);debates.add(s.businessId);speakers.add(s.speaker);if(s.group)groups.add(s.group);}
  for(const s of ranked){if(chosen.length===limit)break;if(chosen.includes(s)||speakers.has(s.speaker)||(s.group&&groups.has(s.group)))continue;chosen.push(s);speakers.add(s.speaker);if(s.group)groups.add(s.group);}
  for(const s of ranked){if(chosen.length===limit)break;if(!chosen.includes(s)&&!speakers.has(s.speaker)){chosen.push(s);speakers.add(s.speaker);}}
+ // Diversity is a preference, not a cap: a person scope or a named speaker has one speaker, so fill the rest by score.
+ for(const s of ranked){if(chosen.length===limit)break;if(!chosen.includes(s))chosen.push(s);}
  return chosen;
 }
 // A follow-up asked inside a narrow scope (one passage or one person) should not dead-end: when that scope
@@ -160,8 +178,12 @@ async function answerParliamentOnce(store,input,env,fetchImpl=fetch,options={}){
   catch{answer.status='sources-only';answer.mode='source-fallback';answer.claims=[];answer.notice='AI answer review is temporarily unavailable; showing the retrieved official sources instead.';}
   if(answer.claims.length&&env.TYPESAFE_MODE&&env.TYPESAFE_MODE!=='off')try{const reviewed=await reviewClaimsWithTypeSafe(answer.claims,env,fetchImpl,{evidence});answer.typesafeReview=publicTypeSafeReview(reviewed);if(reviewed.mode==='enforce'){answer.claims=reviewed.claims;answer.withheldClaims=(answer.withheldClaims||0)+reviewed.withheld;if(!answer.claims.length)answer.status='insufficient-evidence';}}catch{answer.typesafeReview={status:'unavailable',mode:env.TYPESAFE_MODE,model:env.TYPESAFE_MODEL||'jev-latest'};if(env.TYPESAFE_MODE==='enforce'){answer.claims=[];answer.status='sources-only';answer.mode='source-fallback';answer.notice='The secondary evidence review is unavailable; showing retrieved official sources instead.';}}
  }
- const withheld=(answer.claims||[]).filter(c=>{const s=passages.find(p=>'parl-'+p.id===c.evidenceId);const context=s?.transcriptId?sameIntervention(s).map(p=>p.text).join(' '):c.quote;return unsupportedProposalAttribution(c.text,context);});
- if(withheld.length){answer.claims=answer.claims.filter(c=>!withheld.includes(c));answer.withheldClaims=withheld.length;answer.attributionReview='Potential motion-author attribution withheld; inspect the original source.';if(!answer.claims.length)answer.status='insufficient-evidence';}
+ // Deterministic vetoes after model review: a reported motion is not the speaker's own, and only a Federal Council
+ // member's speech can carry "the Federal Council rejects…".
+ const reasons=new Set(),withheld=(answer.claims||[]).filter(c=>{const s=passages.find(p=>'parl-'+p.id===c.evidenceId);
+  if(unsupportedFederalCouncilAttribution(c.text,s?.speakerFunction)){reasons.add('Federal Council position attributed to a speech by a non-member');return true;}
+  const context=s?.transcriptId?sameIntervention(s).map(p=>p.text).join(' '):c.quote;if(unsupportedProposalAttribution(c.text,context)){reasons.add('Potential motion-author attribution');return true;}return false;});
+ if(withheld.length){answer.claims=answer.claims.filter(c=>!withheld.includes(c));answer.withheldClaims=(answer.withheldClaims||0)+withheld.length;answer.attributionReview=[...reasons].join('; ')+' withheld; inspect the original source.';if(!answer.claims.length)answer.status='insufficient-evidence';}
  const out={...answer,passages,retrieval,context:{personId:input.personId,topic:'speech'},latencyMs:Math.round(performance.now()-started),cacheHit:false,coverage:'Imported official passages only; AI-translated search terms. Not a complete parliamentary archive.'};
  if(out.status==='ok'&&out.mode==='live-inference'&&out.claims.length){
   progress('writing',{claims:out.claims.length});

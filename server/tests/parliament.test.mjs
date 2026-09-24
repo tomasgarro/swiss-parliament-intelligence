@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openParliament,officialDate,statusGroup,plainText} from '../parliament.mjs';
-import {assessComparability,answerParliament} from '../parliament-ai.mjs';
+import {assessComparability,answerParliament,selectPassages} from '../parliament-ai.mjs';
 
 test('parliamentary status is not a scheduled popular vote',()=>{
  assert.equal(statusGroup('Liquidé'),'concluded');assert.equal(statusGroup('Déposé'),'proceedings');assert.equal(statusGroup('Unknown status'),'unclassified');
@@ -57,4 +57,31 @@ test('a follow-up that finds nothing in its passage widens once to the whole deb
   return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify(content)}}]})};};
  const answer=await answerParliament(store,{question:'What was said about data protection?',language:'en',passageId:'900-1'},{INFERENCE_BASE_URL:'https://example.test/v1',INFERENCE_MODEL:'fixture'},fetchImpl);
  assert.equal(answer.status,'ok');assert.equal(answer.researchSummary.broadened.to,'debate');assert.equal(answer.researchSummary.broadened.businessId,'b1');
+});
+
+test('a single-speaker scope fills every slot, after distinct speakers are preferred',()=>{
+ const text=i=>'Une intervention substantielle numéro '+i+' sur la réforme, avec assez de mots pour être retenue comme preuve.';
+ const one=new Map([...Array(8)].map((_,i)=>['p'+i,{passage:{id:'p'+i,speaker:'Quadri Lorenzo',text:text(i)},score:1-i/10}]));
+ assert.deepEqual(selectPassages(one,6).map(s=>s.id),['p0','p1','p2','p3','p4','p5']);
+ const mixed=new Map([...one,['q',{passage:{id:'q',speaker:'Docourt Martine',text:text('q')},score:0.05}]]);
+ assert.deepEqual(selectPassages(mixed,3).map(s=>s.id),['p0','q','p1'],'a second speaker still outranks the first speaker’s next passage');
+});
+
+test('a National Councillor’s speech cannot become "The Federal Council rejects the initiative"',async()=>{
+ const run=async(speakerFunction,speaker)=>{
+  const speech={id:'fc-'+speakerFunction,text:'Le Conseil fédéral recommande de rejeter cette initiative, et je partage entièrement cet avis pour notre pays.',language:'fr',speaker,speakerFunction,council:'Conseil national',sha256:speakerFunction,businessId:'b',officialUrl:'https://example.test/source'};
+  const store={speeches:()=>[speech],search:()=>[speech]},seen=[];
+  const fetchImpl=async(_u,o)=>{const p=JSON.parse(o.body),name=p.response_format.json_schema.name;
+   if(name==='cited_answer')seen.push(JSON.parse(p.messages[1].content).evidence[0]);
+   const content=name==='search_terms'?{fr:'initiative',de:'Initiative',it:'iniziativa'}:name==='cited_answer'?{claims:[{text:speaker+': The Federal Council rejects the initiative.',evidenceId:'parl-'+speech.id}]}
+    :name==='cleisthenes_answer'?{lead:{text:speaker+' states that the Federal Council rejects the initiative.',units:['u1']},sections:[],followUps:[]}
+    :Object.fromEntries(Object.keys(p.response_format.json_schema.schema.properties).map(k=>[k,true]));
+   return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify(content)}}]})};};
+  return {answer:await answerParliament(store,{question:'What was said about the initiative?',language:'en',businessId:'b'},{INFERENCE_BASE_URL:'https://example.test/v1',INFERENCE_MODEL:'fc-fixture'},fetchImpl),seen};
+ };
+ const member=await run('Mit-M','Buffat Michaël');
+ assert.equal(member.seen[0].speakerRole,'National Councillor','extraction sees the decoded role, not "Mit-M"');assert.match(member.seen[0].attribution,/National Councillor$/);
+ assert.equal(member.answer.status,'insufficient-evidence');assert.equal(member.answer.claims.length,0);assert.equal(member.answer.withheldClaims,1);assert.match(member.answer.attributionReview,/Federal Council/);
+ const councillor=await run('BR-F','Keller-Sutter Karin');
+ assert.equal(councillor.seen[0].speakerRole,'Federal Councillor');assert.equal(councillor.answer.status,'ok');assert.equal(councillor.answer.claims.length,1);assert.equal(councillor.answer.citations[0].role,'Federal Councillor');
 });

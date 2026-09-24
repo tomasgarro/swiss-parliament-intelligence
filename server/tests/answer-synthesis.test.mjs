@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {synthesizeAnswer} from '../answer-synthesis.mjs';
+import {synthesizeAnswer,buildCitations} from '../answer-synthesis.mjs';
 
 const env={INFERENCE_BASE_URL:'http://model.test/v1',INFERENCE_MODEL:'m'};
 const passages=[{id:'1-1',speaker:'Buffat Michaël',speakerFunction:'Mit-M',council:'NR',date:'2025-09-22',language:'fr',text:'Fixer une limite démographique.',officialUrl:'https://www.parlament.ch'},
@@ -31,4 +31,9 @@ test('an unsupported lead is replaced by the first checked paragraph instead of 
 test('when no paragraph passes review the written answer is still withheld',async()=>{
  const out=await synthesizeAnswer({question:'What are the arguments for and against?',language:'en',claims,passages,env,fetchImpl:model([])});
  assert.equal(out.status,'synthesis-not-supported');
+});
+
+test('citations carry the decoded role, personId and the recorded gender for the next turn',()=>{
+ const {citations}=buildCitations(claims,passages.map((p,i)=>({...p,personId:String(4191+i)})));
+ assert.deepEqual(citations.map(c=>[c.role,c.personId,c.gender]),[['National Councillor','4191','m'],['National Councillor','4192','f']]);
 });
