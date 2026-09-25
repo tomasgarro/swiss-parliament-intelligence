@@ -20,10 +20,17 @@
    },
    "businessId": "20240092",
    "review": {
-    "status": "pending",
-    "reviewer": null,
-    "reviewedAt": null,
-    "checklist": null
+    "status": "approved",
+    "reviewer": "Tomas Garro",
+    "reviewedAt": "2026-09-25T09:30:46.476Z",
+    "briefGeneratedAt": "2026-09-25T06:28:05.334Z",
+    "checklist": [
+     "quotes-match",
+     "same-verbs-and-labels",
+     "no-judgement-or-stray-numbers",
+     "coverage-labels-match",
+     "no-advice-or-prediction"
+    ]
    },
    "brief": {
     "generatedAt": "2026-09-25T06:28:05.334Z",
@@ -5252,10 +5259,17 @@
    },
    "businessId": "20250067",
    "review": {
-    "status": "pending",
-    "reviewer": null,
-    "reviewedAt": null,
-    "checklist": null
+    "status": "approved",
+    "reviewer": "Tomas Garro",
+    "reviewedAt": "2026-09-25T09:30:46.666Z",
+    "briefGeneratedAt": "2026-09-25T06:31:23.869Z",
+    "checklist": [
+     "quotes-match",
+     "same-verbs-and-labels",
+     "no-judgement-or-stray-numbers",
+     "coverage-labels-match",
+     "no-advice-or-prediction"
+    ]
    },
    "brief": {
     "generatedAt": "2026-09-25T06:31:23.869Z",
