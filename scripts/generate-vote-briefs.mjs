@@ -72,4 +72,35 @@ function dataStage(){
 
 if(stage==='data')dataStage();
 else if(stage==='brief')(await import('./lib/vote-brief.mjs')).briefStage({root,out,date,write});
-else throw new Error('UNKNOWN_STAGE');
+else if(stage==='prepared')await (await import('./lib/vote-prepared.mjs')).preparedStage({root,out,write});
+else if(!['review','approve','prepared'].includes(stage))throw new Error('UNKNOWN_STAGE');
+
+// Review document: every argument in all four languages beside its original quote, plus the checklist (spec §5).
+if(stage==='review'){
+ const data=JSON.parse(readFileSync(out,'utf8')),lines=[`# Vote Companion review · ${data.voteDate}`,'',
+  'Tick each item per object, then approve with:','','`node scripts/generate-vote-briefs.mjs --date='+date+' --stage=approve --object=<id> --reviewer="<name>"`',''];
+ for(const o of data.objects){const b=o.brief,nc=o.decided?.nationalCouncil;
+  lines.push(`## ${o.id} · ${o.title.en}`,'',`Business ${o.businessNumber} · ${o.passagesAvailable} passages · ${b?.interventionsRead} interventions read · model ${b?.model} · generated ${b?.generatedAt}`,'');
+  if(nc)lines.push(`**National Council final vote (${String(nc.date).slice(0,10)}):** yes ${nc.counts.yes} / no ${nc.counts.no} / abstained ${nc.counts.abstained}. Yes meant: “${nc.meaningYes}” → shown as *${nc.yesMeans}*.`,'');
+  for(const side of ['for','against']){const c=b.coverage[side];lines.push(`### ${side==='for'?'For (accept the initiative)':'Against (reject the initiative)'} · coverage ${c.level} (${c.passages} checked claims, ${c.speakers} speakers)`,'');
+   (b.languages.en[side]||[]).forEach((a,i)=>{const cit=b.citations[a.citationIds[0]];lines.push(`${i+1}. **${cit.speaker}** · ${cit.role}${cit.groupName?' · '+cit.groupName:''} · ${String(cit.date).slice(0,10)} · [record](${cit.officialUrl})`);
+    for(const l of ['en','fr','de','it'])lines.push(`   - ${l.toUpperCase()}: ${b.languages[l][side][i].text}`);
+    lines.push(`   - Original (${cit.language}): “${cit.quote.slice(0,700)}${cit.quote.length>700?'…':''}”`,'');});
+   if(!b.languages.en[side].length)lines.push('_No argument shown; the page displays the coverage label._','');}
+  // The "Instant" questions are public too: their answers are reviewed in the same pass.
+  for(const p of o.prepared||[]){lines.push(`### Instant question · ${p.question.en}`,'');
+   for(const l of ['en','fr','de','it']){const a=p.answers[l];if(!a){lines.push(`- ${l.toUpperCase()}: _not prepared; this chip runs live_`);continue;}
+    const cites=(a.citations||[]).map(c=>`${c.speaker} (${String(c.date).slice(0,10)})`).join('; ');
+    lines.push(`- ${l.toUpperCase()}: ${a.answer.lead.text}`,...(a.answer.sections||[]).flatMap(s=>[`  - *${s.title}*`,...s.paragraphs.map(x=>`    - ${x.text}`)]),`  - Sources: ${cites}`);}
+   lines.push('');}
+  lines.push('Checklist:','- [ ] Every quote says what its sentence says','- [ ] Same verbs and label format on both sides','- [ ] No judgement words, no numbers outside the vote record or a quote','- [ ] Coverage labels match the counts','- [ ] Nothing advises, predicts or says who is right','');
+ }
+ const file=resolve(root,`artifacts/vote-review-${date}.md`);mkdirSync(resolve(root,'artifacts'),{recursive:true});writeFileSync(file,lines.join('\n'));console.log('review document',file);
+}
+// Approval by a named reviewer, recorded with the brief (spec decision 11). Only approved briefs are served.
+if(stage==='approve'){
+ const data=JSON.parse(readFileSync(out,'utf8')),id=arg('object'),reviewer=arg('reviewer');
+ const o=data.objects.find(x=>x.id===id);if(!o||!o.brief||!reviewer)throw new Error('USAGE: --object=<id with a brief> --reviewer="<name>"');
+ o.review={status:'approved',reviewer,reviewedAt:new Date().toISOString(),briefGeneratedAt:o.brief.generatedAt,checklist:['quotes-match','same-verbs-and-labels','no-judgement-or-stray-numbers','coverage-labels-match','no-advice-or-prediction']};
+ write(data);
+}
