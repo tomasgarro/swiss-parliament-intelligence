@@ -1,0 +1,9 @@
+{
+ "feedUrl": "https://app-prod-static-voteinfo.s3.eu-central-1.amazonaws.com/v1/ogd/sd-t-17-02-{date}-eidgAbstimmung.json",
+ "feedFile": "config/votes/feeds/sd-t-17-02-{date}-eidgAbstimmung.json",
+ "dateUrl": "https://www.admin.ch/gov/en/start/documentation/votes.html",
+ "objects": {
+  "6880": {"businessId": "20240092", "note": "24.092 «Sauvegarder la neutralité suisse (initiative sur la neutralité)». Initiative populaire"},
+  "6890": {"businessId": "20250067", "note": "25.067 «Pour une alimentation sûre …». Initiative populaire"}
+ }
+}

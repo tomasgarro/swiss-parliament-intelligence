@@ -10,7 +10,8 @@ export function accessPolicy(env){const p=env.ACCESS_POLICY||'open';if(!POLICIES
 export const PAID_ROUTES=new Set(['/api/parliament/ask','/api/parliament/ask/stream','/api/parliament/translate','/api/parliament/compare','/api/parliament/draft','/api/parliament/video-search','/api/parliament/proposals','/api/ask','/api/feedback','/api/health/ai']);
 // Model routes that use the reader's question allowance.
 export const QUESTION_ROUTES=new Set(['/api/parliament/ask','/api/parliament/ask/stream','/api/ask','/api/parliament/compare','/api/parliament/draft']);
-const alwaysOpen=p=>p==='/api/health'||p.startsWith('/api/auth/')||p==='/api/me'||p.startsWith('/api/me/');
+// Vote Companion briefs are public: cached, reviewed, no per-view cost (docs/VOTE-COMPANION-SPEC.md).
+const alwaysOpen=p=>p==='/api/health'||p.startsWith('/api/auth/')||p==='/api/me'||p.startsWith('/api/me/')||p==='/api/votes'||p.startsWith('/api/votes/');
 export function requiresAccount(policy,p){
  if(policy==='open'||!p.startsWith('/api/')||alwaysOpen(p))return false;
  return policy==='verified'||PAID_ROUTES.has(p);
