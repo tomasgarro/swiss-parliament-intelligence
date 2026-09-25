@@ -28,7 +28,9 @@ export function FollowUps({questions,onAsk,onEdit,disabled,t}){
  return <div className="answer-followups"><p>{t('Continue exploring','Continuer l’exploration')}</p>{questions.map(q=><div className="answer-followup" key={q}><button type="button" disabled={disabled} onClick={()=>onAsk(q)}>{q}<ArrowUpRight size={13}/></button>{onEdit&&<button type="button" className="answer-followup-edit" disabled={disabled} onClick={()=>onEdit(q)} aria-label={t(`Edit before asking: ${q}`,`Modifier avant d’envoyer : ${q}`)} title={t('Edit before asking','Modifier avant d’envoyer')}><PencilSimple size={13}/></button>}</div>)}</div>;
 }
 
-export default function CleisthenesAnswer({answer,language,onCite,onFollowUp,onEditFollowUp,onLiteral,disabled}){
+// translate=false keeps quotes in their original language without calling the translation route (public pages
+// show prepared answers to readers who have no account, and that route needs one).
+export default function CleisthenesAnswer({answer,language,onCite,onFollowUp,onEditFollowUp,onLiteral,disabled,translate=true}){
  const fr=language==='fr',t=(en,frText)=>fr?frText:en;
  const citations=answer.citations||[],number=id=>citations.findIndex(c=>c.id===id)+1;
  const day=value=>value?new Date(value).toLocaleDateString(fr?'fr-CH':'en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
@@ -48,7 +50,7 @@ export default function CleisthenesAnswer({answer,language,onCite,onFollowUp,onE
   {answer.profile&&<ProfileCard profile={answer.profile} t={t}/>}
   {paragraph(answer.answer.lead,'lead','answer-lead')}
   {answer.answer.sections?.map((s,i)=><section key={i} className="answer-section"><h3>{s.title}</h3>{s.paragraphs.map((p,j)=>paragraph(p,j))}</section>)}
-  {featured&&<EvidenceMoments answer={answer} citations={speeches} active={active} setActive={setActive} onOpen={c=>onCite(c)} language={language} t={t} day={day}/>}
+  {featured&&<EvidenceMoments answer={answer} citations={speeches} active={active} setActive={setActive} onOpen={c=>onCite(c)} language={language} t={t} day={day} translate={translate}/>}
   {citations.length>0&&<ol className="answer-sources" aria-label={t('Sources','Sources')}>{citations.map((c,i)=><li key={c.id}><button type="button" onClick={()=>cite(c)}><span className="answer-source-n">{i+1}</span><span><strong>{sourceName(c,fr)}</strong><small>{day(c.date)} · {LANGUAGE_LABEL[c.originalLanguage]||''}{c.title?` · ${excerpt(c.title,70)}`:''}{c.video?t(' · video',' · vidéo'):''}</small></span></button></li>)}</ol>}
   {answer.web&&<WebResearch web={answer.web} t={t}/>}
   {summary&&<ResearchSummary summary={summary} t={t}/>}
@@ -95,16 +97,16 @@ export function ProfileCard({profile,t}){
 
 // The featured evidence card: numbered speaker tabs swap quote and video in place; the quote is shown in the
 // reader's language (labelled machine translation) with the original one click away.
-function EvidenceMoments({answer,citations,active,setActive,onOpen,language,t,day}){
+function EvidenceMoments({answer,citations,active,setActive,onOpen,language,t,day,translate}){
  const current=citations.find(c=>c.id===active)||citations[0],n=citations.indexOf(current)+1;
  const [videoOpen,setVideoOpen]=useState(false),[showOriginal,setShowOriginal]=useState(false),[translated,setTranslated]=useState(null),cache=useRef(new Map());
  const target=['en','fr','de','it'].includes(language)?language:'en',needsTranslation=current.originalLanguage&&current.originalLanguage!==target&&['en','fr','de','it'].includes(current.originalLanguage);
- useEffect(()=>{setShowOriginal(false);if(!needsTranslation){setTranslated(null);return;}const key=current.passageId+'|'+target;
+ useEffect(()=>{setShowOriginal(false);if(!needsTranslation||!translate){setTranslated(null);return;}const key=current.passageId+'|'+target;
   if(cache.current.has(key)){setTranslated(cache.current.get(key));return;}setTranslated(null);let live=true;
   api.translatePassage({evidenceId:current.passageId,language:target}).then(r=>{if(r.status==='ok'&&r.text){cache.current.set(key,r.text);if(live)setTranslated(r.text);}}).catch(()=>{});
-  return()=>{live=false;};},[current.passageId,target]);
+  return()=>{live=false;};},[current.passageId,target,translate]);
  // Warm the other sources' translations so switching speakers is instant.
- useEffect(()=>{let live=true;(async()=>{for(const c of citations){const key=c.passageId+'|'+target;if(!live||cache.current.has(key)||!c.originalLanguage||c.originalLanguage===target)continue;try{const r=await api.translatePassage({evidenceId:c.passageId,language:target});if(r.status==='ok'&&r.text)cache.current.set(key,r.text);}catch{}}})();return()=>{live=false;};},[target,citations.length]);
+ useEffect(()=>{if(!translate)return;let live=true;(async()=>{for(const c of citations){const key=c.passageId+'|'+target;if(!live||cache.current.has(key)||!c.originalLanguage||c.originalLanguage===target)continue;try{const r=await api.translatePassage({evidenceId:c.passageId,language:target});if(r.status==='ok'&&r.text)cache.current.set(key,r.text);}catch{}}})();return()=>{live=false;};},[target,citations.length,translate]);
  const quote=needsTranslation&&translated&&!showOriginal?translated:current.quote;
  return <figure className="answer-evidence">
   <figcaption><span className="answer-evidence-kind">{current.video?<><Play size={13} weight="fill"/>{t('Evidence moment · parliamentary video','Moment clé · vidéo parlementaire')}</>:<><Quotes size={13} weight="fill"/>{t('Evidence moment · official quotation','Moment clé · citation officielle')}</>}</span>
