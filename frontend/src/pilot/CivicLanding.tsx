@@ -4,6 +4,7 @@ import './landing.css';
 import LandingAccount from './LandingAccount.jsx';
 import {ResearchDemo,PrivacyDemo,ParticipateDemo} from './LandingDemos.jsx';
 import {askCleisthenes} from './navigation.js';
+import {NextVoteCard} from './VoteCompanion.jsx';
 const asset=name=>import.meta.env.BASE_URL+'brand/'+name;
 const alpineLandscape=asset('alpine-landscape.png'),porticoForeground=asset('portico.png'),cleisthenesBust=asset('cleisthenes-bust.png'),midnightMark=asset('midnight-mark.svg'),genevaFooter={url:asset('geneva-footer.png')};
 function Button({asChild,variant,size,className='',children,...props}){const cls='civic-button '+(variant||'civic')+' '+className;return asChild?React.cloneElement(children,{...props,className:cls}):<button type="button" {...props} className={cls}>{children}</button>;}
@@ -229,6 +230,8 @@ export default function CivicLanding({onNavigate,user,onUser,language='en',reduc
             </h1>
             <p className="hero-subtitle">Meet Cleisthenes, your thoughtful civic companion.</p>
             <Button variant="civic" size="lg" onClick={getStarted}>Get started <ArrowRight /></Button><a className="landing-preview-link" href="#features">See it in action</a>
+            {/* Sunday's federal vote: public, no account needed. */}
+            <NextVoteCard language={language} variant="landing"/>
           </div>
           <div className="mascot" aria-label="Cleisthenes, the civic companion">
             <img

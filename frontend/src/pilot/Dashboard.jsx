@@ -6,6 +6,7 @@ import ParliamentAgenda from './ParliamentAgenda.jsx';
 import './agenda.css';
 import {loadConversations} from './chat-history.mjs';
 import './dashboard-feedback.css';
+import {NextVoteCard} from './VoteCompanion.jsx';
 
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Zurich',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const cantons='AG AI AR BE BL BS FR GE GL GR JU LU NE NW OW SG SH SO SZ TG TI UR VD VS ZG ZH'.split(' ');
@@ -33,6 +34,7 @@ export default function Dashboard({user,dossiers,onNavigate,onAsk,onAccount,lang
  function moveMonth(delta){const next=shiftMonth(month,delta);setMonth(next);setPickerYear(Number(next.slice(0,4)));setMonthPicker(false);setCalendarDay(null);setCalendarEvent(null);}
  function askFromHome(event){event.preventDefault();const prompt=chatDraft.trim();if(!prompt)return;onAsk(null,{prompt,autoSend:true});setChatDraft('');}
  return <section className="civic-dashboard"><div className="workspace-heading dashboard-welcome"><h1>Welcome, {displayName}.</h1><span className="today-stamp">{new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Zurich',weekday:'long',day:'numeric',month:'long'}).format(new Date())}<small>Europe / Zurich</small></span></div>
+ <NextVoteCard language={language}/>
  <form className="dashboard-chat" onSubmit={askFromHome}><ChatCircleDots size={24} aria-hidden="true"/><label className="sr-only" htmlFor="dashboard-chat-input">Ask Cleisthenes</label><input id="dashboard-chat-input" value={chatDraft} onChange={e=>setChatDraft(e.target.value)} placeholder="Ask Cleisthenes about Parliament, a proposal or a public statement…" maxLength={500}/><button aria-label="Ask Cleisthenes" disabled={!chatDraft.trim()}><PaperPlaneTilt size={20}/></button></form>
  <div className="dashboard-shortcuts"><button onClick={()=>onNavigate(null,'parliament')}><span>Explore the chambers</span><strong>246 representatives ↗</strong></button><button onClick={()=>onNavigate(null,'explore')}><span>Understand a proposal</span><strong>Topics & votes ↗</strong></button><button onClick={()=>onNavigate(null,'saved')}><span>Your personal library</span><strong>Saved research ↗</strong></button></div>
  {error&&<p role="status">{error}</p>}<div className="dashboard-grid"><ParliamentAgenda events={events} language={language} loading={!data} retrievedAt={data?.agenda.retrievedAt} stale={data?.agenda.stale} chamberSlot={<div className="agenda-chamber"><MiniChamber snapshot={chamber} onOpen={()=>onNavigate(null,'parliament')}/><div><strong>{language==='fr'?'Les chambres':'The chambers'}</strong><small>{language==='fr'?'Conseil national · 200 sièges':'National Council · 200 seats'}</small><small>{language==='fr'?'Conseil des Etats · 46 sièges':'Council of States · 46 seats'}</small><button className="text-button" onClick={()=>onNavigate(null,'parliament')}>{language==='fr'?'Voir qui siège →':'See who sits where →'}</button></div></div>} onAsk={onAsk} onNavigate={onNavigate}/>
