@@ -40,6 +40,15 @@ export function applyImportedReceipts(jobs,receipts){
  return jobs;
 }
 
+// The official video server answers 404 for many older recordings: there is nothing to transcribe, so those jobs
+// leave the pending queue as media failures. A transcribed job is never downgraded; other errors stay pending (retryable).
+export function applyMissingOfficialVideo(jobs,failures){
+ if(!Array.isArray(failures))throw new Error('INVALID_MEDIA_FAILURES');
+ const missing=new Set(failures.filter(f=>/^\d+$/.test(String(f?.id))&&/^404 Client Error: Not Found for url: https:\/\/par-pcache\.simplex\.tv\//.test(String(f?.error))).map(f=>String(f.id)));
+ for(const job of jobs)if(missing.has(String(job.id))&&job.asr!=='complete')Object.assign(job,{stage:'failed',mediaError:'OFFICIAL_VIDEO_NOT_FOUND'});
+ return jobs;
+}
+
 export function applyAlignmentCandidates(jobs,candidates){
  if(!Array.isArray(candidates))throw new Error('INVALID_ALIGNMENT_CANDIDATES');
  const byId=new Map(jobs.map(job=>[String(job.id),job])),passages=new Map();

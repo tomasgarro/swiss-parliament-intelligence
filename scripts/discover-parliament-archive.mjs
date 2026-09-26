@@ -39,7 +39,8 @@ async function discover(){
 }
 
 const readJson=file=>{try{return JSON.parse(readFileSync(file,'utf8'));}catch{return null;}};
-const stage=(complete,total,failed=0)=>failed?'attention':total&&complete>=total?'complete':complete?'partial':'pending';
+// 'none' means there is nothing to process at that stage (no recordings, or no official text), not work still pending.
+const stage=(complete,total,failed=0)=>failed?'attention':!total?'none':complete>=total?'complete':complete?'partial':'pending';
 const parliamentFile=resolve(data,'parliament.sqlite');
 const parliament=existsSync(parliamentFile)?new DatabaseSync(parliamentFile,{readOnly:true}):null;
 const processingFile=resolve(data,'public-processing.sqlite');
@@ -52,16 +53,24 @@ try{
   const receipts=new Map(processing?processing.prepare('SELECT session,count(*) n FROM transcripts GROUP BY session').all().map(row=>[String(row.session),Number(row.n)]):[]);
   const passageSession=new Map(parliament?parliament.prepare("SELECT id,json_extract(payload,'$.sessionId') session FROM records WHERE kind='speech'").all().map(row=>[String(row.id),String(row.session)]):[]);
   const chunks=new Map();
-  if(embeddings)for(const row of embeddings.prepare('SELECT metadata FROM embeddings').iterate()){const session=passageSession.get(String(JSON.parse(row.metadata).id));if(session)chunks.set(session,(chunks.get(session)||0)+1);}
+  // The serving semantic index lists every embedded passage; count distinct passages per session from it when present.
+  const indexIds=resolve(data,'embeddings/e5-index-20260923.ids.jsonl');
+  if(existsSync(indexIds)){const counted=new Set();for(const line of readFileSync(indexIds,'utf8').split('\n')){if(!line)continue;const passage=String(JSON.parse(line)[0]);if(counted.has(passage))continue;counted.add(passage);const session=passageSession.get(passage);if(session)chunks.set(session,(chunks.get(session)||0)+1);}}
+  else if(embeddings)for(const row of embeddings.prepare('SELECT metadata FROM embeddings').iterate()){const session=passageSession.get(String(JSON.parse(row.metadata).id));if(session)chunks.set(session,(chunks.get(session)||0)+1);}
+  // The reconciled job list (npm run processing:backlog) carries worker results, including recordings the official video server lacks.
+  const reconciled=new Map();
+  for(const job of readJson(resolve(data,'public-session-queue.json'))||[]){const key=String(job.sessionId);if(!reconciled.has(key))reconciled.set(key,[]);reconciled.get(key).push(job);}
   const official=await discover(),seen=new Set(),sessions=[];
   for(const row of official){
     const id=String(row.ID),start=officialDate(row.StartDate),end=officialDate(row.EndDate);if(seen.has(id)||!start)continue;seen.add(id);
     const sessionYear=Number(start.slice(0,4));if(sessionYear<fromYear||sessionYear>toYear)continue;
-    const directory=resolve(data,`parliament/session-${id}`),jobs=readJson(resolve(directory,'media-jobs.json'))||[],progress=readJson(resolve(directory,'progress.json'));
+    const directory=resolve(data,`parliament/session-${id}`),jobs=reconciled.get(id)||readJson(resolve(directory,'media-jobs.json'))||[],progress=readJson(resolve(directory,'progress.json'));
     const asr=receipts.get(id)||0,e5=chunks.get(id)||0,textPassages=passages.get(id)||0,mediaComplete=jobs.filter(job=>job.mediaSha256||job.stage==='downloaded'||job.asr==='complete').length;
-    const mediaFailed=jobs.filter(job=>job.stage==='failed').length,alignment=jobs.reduce((sum,job)=>sum+Number(job.alignedParagraphs||0),0);
+    // A recording the official server does not hold is settled, not pending: it counts as resolved media and leaves the ASR total.
+    const videoMissing=jobs.filter(job=>job.mediaError==='OFFICIAL_VIDEO_NOT_FOUND').length;
+    const mediaFailed=jobs.filter(job=>job.stage==='failed'&&job.mediaError!=='OFFICIAL_VIDEO_NOT_FOUND').length,alignment=jobs.reduce((sum,job)=>sum+Number(job.alignedParagraphs||0),0);
     const textComplete=imported.get(id)?.ingestion?.status==='text-indexed';
-    sessions.push({id,title:row.SessionName,start,end,type:row.TypeName,officialSource:row.__metadata?.uri,retrievedAt:new Date().toISOString(),coverage:{officialTextPassages:textPassages,recordingJobs:jobs.length,mediaResolved:mediaComplete,mediaFailed,canaryReceipts:asr,e5Chunks:e5,timingCandidates:alignment},stages:{text:progress?.status==='failed'?'attention':textComplete?'complete':textPassages?'partial':'pending',media:stage(mediaComplete,jobs.length,mediaFailed),asr:stage(asr,jobs.length),embeddings:stage(e5,textPassages),alignment:alignment?'partial':'pending'}});
+    sessions.push({id,title:row.SessionName,start,end,type:row.TypeName,officialSource:row.__metadata?.uri,retrievedAt:new Date().toISOString(),coverage:{officialTextPassages:textPassages,recordingJobs:jobs.length,mediaResolved:mediaComplete,mediaFailed,officialVideoMissing:videoMissing,canaryReceipts:asr,e5Chunks:e5,timingCandidates:alignment},stages:{text:progress?.status==='failed'?'attention':textComplete?'complete':textPassages?'partial':'pending',media:stage(mediaComplete+videoMissing,jobs.length,mediaFailed),asr:stage(asr,jobs.length-videoMissing),embeddings:stage(e5,textPassages),alignment:alignment?'partial':asr?'pending':'none'}});
   }
   sessions.sort((a,b)=>b.start.localeCompare(a.start));
   const manifest={schemaVersion:1,generatedAt:new Date().toISOString(),boundary:{fromYear,toYear,definition:'All French-language Session records returned by the official Swiss Parliament OData service whose start date falls inside this inclusive year range.'},source:{name:'Swiss Parliament OData Session',url:'https://ws.parlament.ch/odata.svc/Session',language:'FR'},sessions};
