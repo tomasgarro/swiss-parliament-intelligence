@@ -51,6 +51,37 @@ Verified means a confirmed email, or an OAuth identity that vouches for the addr
 
 Each account has `ASK_DAILY_LIMIT` / `ASK_WEEKLY_LIMIT` questions (20 / 100) and `TRANSLATE_DAILY_LIMIT` translations. They are stored in `data/pilot.sqlite`, and prepared answers don't count.
 
+### Questions without an account
+
+The midnight.vote app asks about a consultation without cookies, so its readers have no account here. They may ask only when both of these are set:
+
+| Variable | Meaning | A starting value |
+| --- | --- | --- |
+| `ANONYMOUS_ASK_DAILY_LIMIT` | Questions per reader, per UTC day | 3 |
+| `ANONYMOUS_ASK_DAILY_TOTAL` | Questions of all such readers together, per UTC day | 200 |
+| `ANONYMOUS_ASK_SALT` | A secret. It salts the key under which a reader is counted | 32 random bytes |
+
+With either limit missing, the allowance is off and an anonymous question gets `SIGN_IN_REQUIRED`, as before.
+
+| Rule | Reason |
+| --- | --- |
+| One route only: `POST /api/parliament/ask/stream` | Every other model route still needs a verified account |
+| The question must name the proposal of a vote whose brief is approved | The allowance is for the consultation page, not for the whole archive |
+| The question, its language and that proposal are kept. A thread, a person, a passage and filters are dropped | They belong to the research desk |
+| No web research | It is paid for per search |
+| 6 requests a minute per address (`ANONYMOUS_RATE_LIMIT`) | Abuse |
+| A prepared answer uses no allowance | It costs nothing |
+| A request with a session cookie is judged as an account | A stale cookie must not fall back to the guest allowance |
+| `MODEL_DAILY_BUDGET_USD` still applies | It is the last stop for every reader |
+
+A reader is counted under a salted hash of the address and the day. The table holds no address, and the key of one day cannot be matched with the key of the next. Without `ANONYMOUS_ASK_SALT` a salt is drawn when the server starts, so a restart gives each reader a new count for that day; the total is kept.
+
+`/api/health` reports `anonymousQuestions: {"perDay": 3}`, or `null` when the allowance is off.
+
+The refusals are `DAILY_LIMIT_REACHED` for the reader and `ANONYMOUS_CAPACITY_REACHED` for all readers. Both are 429 and carry `resetAt`.
+
+Rollback: remove either limit and restart the container.
+
 Rate limits are 120 reads and 20 writes a minute per account, and `AUTH_RATE_LIMIT` sign-in attempts a minute per address. `proxy.php` forwards the reader's address with `X-Proxy-Key` from `~/.swiss-proxy-key` on the shared hosting, and it must equal `PROXY_SHARED_SECRET`.
 
 Rollback: set `ACCESS_POLICY=open` or `paid` and restart the container.
