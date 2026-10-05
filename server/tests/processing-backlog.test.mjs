@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {applyAlignmentCandidates,applyImportedReceipts,mergeProcessingJobs,summarizeProcessingJobs} from '../processing-backlog.mjs';
+import {applyAlignmentCandidates,applyImportedReceipts,applyMissingOfficialVideo,mergeProcessingJobs,summarizeProcessingJobs} from '../processing-backlog.mjs';
 
 const job=(id,sessionId,extra={})=>({id:String(id),sessionId:String(sessionId),subjectId:'1',personId:2,language:'fr',officialPage:`https://www.parlament.ch/source/${id}`,durationHintSeconds:30,stage:'source-verification-pending',asr:'pending',alignment:'pending',vss:'pending',...extra});
 test('processing backlog merges session queues and preserves worker state',()=>{
@@ -22,4 +22,13 @@ test('staged alignment candidates replace stale queue counts and deduplicate pas
  const candidates=[{transcriptId:'1',passageId:'1-0'},{transcriptId:'1',passageId:'1-0'},{transcriptId:'1',passageId:'1-1'}];
  applyAlignmentCandidates(jobs,candidates);assert.equal(jobs[0].alignedParagraphs,2);assert.equal(jobs[1].alignedParagraphs,0);
  assert.throws(()=>applyAlignmentCandidates(jobs,[{transcriptId:'99',passageId:'99-0'}]),/ALIGNMENT_CANDIDATE_MISMATCH/);
+});
+test('recordings with no official video leave the pending queue; transcribed ones and network errors do not',()=>{
+ const jobs=[job(1,5215),job(2,5215,{asr:'complete'}),job(3,5215)];
+ const notFound=id=>({id,error:`404 Client Error: Not Found for url: https://par-pcache.simplex.tv/content/simvid_1.mp4?externalid=${id}`});
+ applyMissingOfficialVideo(jobs,[notFound('1'),notFound('2'),{id:'3',error:"HTTPSConnectionPool(host='par-pcache.simplex.tv', port=443): Max retries exceeded"}]);
+ assert.equal(jobs[0].stage,'failed');assert.equal(jobs[0].mediaError,'OFFICIAL_VIDEO_NOT_FOUND');
+ assert.equal(jobs[1].asr,'complete');assert.notEqual(jobs[1].stage,'failed');
+ assert.notEqual(jobs[2].stage,'failed');
+ assert.throws(()=>applyMissingOfficialVideo(jobs,null),/INVALID_MEDIA_FAILURES/);
 });

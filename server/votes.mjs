@@ -18,6 +18,11 @@ const card=o=>({id:o.id,type:o.type,title:o.title,businessNumber:o.businessNumbe
 export function voteIndex(root,env={}){
  return {dates:load(root).map(d=>({date:d.voteDate,officialUrl:d.officialUrl||null,objects:d.objects.filter(o=>visible(o,env)).map(card),inPreparation:d.objects.filter(o=>!visible(o,env)).map(o=>({id:o.id,title:o.title}))}))};
 }
+// The proposals an anonymous reader may ask about: those of approved briefs only. A draft shown by
+// VOTES_PREVIEW is for local review and opens nothing to the public.
+export function publicBusinessIds(root){
+ return new Set(load(root).flatMap(d=>d.objects).filter(o=>o.review?.status==='approved'&&o.businessId).map(o=>String(o.businessId)));
+}
 export function voteObject(root,id,env={}){
  for(const d of load(root))for(const o of d.objects)if(o.id===String(id)&&visible(o,env))return {...o,voteDate:d.voteDate,dateOfficialUrl:d.officialUrl||null};
  return null;

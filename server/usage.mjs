@@ -1,6 +1,8 @@
 // Per-user question allowances, kept in the application database (data/pilot.sqlite), which releases never
 // replace. Days are UTC; weeks start on Monday (UTC). Limits come from the environment so they can be
 // rebalanced as usage grows, without a release.
+// Every anonymous question is also counted here. A reader's own key is a hash, so it cannot be this one.
+const ANONYMOUS_TOTAL='anon:all';
 const day=now=>now.toISOString().slice(0,10);
 const monday=now=>{const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));return d;};
 const plusDays=(date,n)=>{const d=new Date(date);d.setUTCDate(d.getUTCDate()+n);return d.toISOString();};
@@ -26,6 +28,18 @@ export function createUsage(db,env,{clock=()=>new Date()}={}){
    for(const scope of ['day','week']){const {used,limit,resetAt}=s[scope];if(limit&&used>=limit)throw Object.assign(new Error(scope==='day'?'DAILY_LIMIT_REACHED':'WEEKLY_LIMIT_REACHED'),{status:429,details:{limit,used,resetAt,kind}});}
    const p=periods();db.exec('BEGIN');try{bump.run(p.day.key,subject,kind);bump.run(p.week.key,subject,kind);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
    return summary(subject,kind);
-  }
+  },
+  // Anonymous readers: one allowance for the reader and one for all of them, per UTC day. Both are checked
+  // before either is counted, so a refused question costs nobody anything.
+  consumeAnonymous(subject,{perReader,total}){
+   const p=periods(),used=s=>read.get(p.day.key,s,'anonymous')?.count||0;
+   const refuse=(code,limit,count)=>Object.assign(new Error(code),{status:429,details:{limit,used:count,resetAt:p.day.resetAt,kind:'anonymous'}});
+   if(used(subject)>=perReader)throw refuse('DAILY_LIMIT_REACHED',perReader,used(subject));
+   if(used(ANONYMOUS_TOTAL)>=total)throw refuse('ANONYMOUS_CAPACITY_REACHED',total,used(ANONYMOUS_TOTAL));
+   db.exec('BEGIN');try{bump.run(p.day.key,subject,'anonymous');bump.run(p.day.key,ANONYMOUS_TOTAL,'anonymous');db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+   return {used:used(subject),limit:perReader,resetAt:p.day.resetAt};
+  },
+  // The UTC day the allowances are counted in.
+  today:()=>day(clock())
  };
 }

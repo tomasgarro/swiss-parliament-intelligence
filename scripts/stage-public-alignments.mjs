@@ -3,12 +3,13 @@ import {DatabaseSync} from 'node:sqlite';
 import {writeFileSync,mkdirSync} from 'node:fs';
 import {openParliament} from '../server/parliament.mjs';
 import {alignEditedParagraph} from '../server/word-alignment.mjs';
-const db=new DatabaseSync('data/public-processing.sqlite',{readOnly:true}),store=openParliament(),byTranscript=new Map();
-for(const s of store.speeches()){const key=String(s.transcriptId);if(!byTranscript.has(key))byTranscript.set(key,[]);byTranscript.get(key).push(s);}
+// Passages are read per recording through the transcript index, so the run fits in a few GB whatever the archive size.
+const db=new DatabaseSync('data/public-processing.sqlite',{readOnly:true}),store=openParliament();
 const candidates=[];let recordings=0,matchedRecordings=0;
 for(const row of db.prepare('SELECT id,payload FROM transcripts').iterate()){
- const receipt=JSON.parse(row.payload),passages=byTranscript.get(row.id)||[];recordings++;
- if(!passages.length)continue;const words=receipt.segments.flatMap(s=>s.words||[]);let matches=0;
+ const passages=store.speechesWhere({transcriptId:row.id});recordings++;
+ if(!passages.length)continue;const receipt=JSON.parse(row.payload);
+ const words=receipt.segments.flatMap(s=>s.words||[]);let matches=0;
  for(const passage of passages){const timing=alignEditedParagraph(passage.text,words,receipt.duration_seconds);if(!timing)continue;matches++;
   candidates.push({passageId:passage.id,transcriptId:row.id,speaker:passage.speaker,language:passage.language,sourceText:passage.text,sourceUrl:passage.officialUrl,...timing,mediaSha256:receipt.mediaSha256,model:receipt.model,reviewState:'machine-timing-candidate; media availability and human timing review required'});
  }

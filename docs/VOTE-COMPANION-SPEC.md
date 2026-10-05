@@ -10,6 +10,11 @@ Decisions already taken:
   network and section 6 has been reworked for commit–reveal (see 8.1).
 - **Briefs and their prepared questions are public** (cached, no per-view cost). Free questions need a
   verified account (20 a day, 100 a week).
+- **Proposed, 30 September 2026, off by default:** the server can open a small daily allowance to readers
+  without an account, for a question about a vote whose brief is approved. It exists for the midnight.vote
+  app, which asks without cookies. The rules and the two limits are in
+  [OPERATIONS.md](OPERATIONS.md#questions-without-an-account). Until both limits are set, the line above holds
+  for everyone.
 - The section 7 recommendations are the defaults unless section 8 says otherwise.
 
 ## 1. Product brief

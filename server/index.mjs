@@ -30,9 +30,9 @@ import {semanticIndexAvailable,semanticSearch} from './semantic-search.mjs';
 import {embedQuery} from './query-embedding.mjs';
 import {buildProfileCoverage} from './profile-coverage.mjs';
 import {readProcessingBacklog} from './processing-backlog.mjs';
-import {accessPolicy,requiresAccount,PAID_ROUTES,QUESTION_ROUTES,clientIp,createRateLimiter} from './access.mjs';
+import {accessPolicy,requiresAccount,PAID_ROUTES,QUESTION_ROUTES,clientIp,createRateLimiter,anonymousAllowance,anonymousQuestion,anonymousSalt,anonymousSubject,hasSessionCookie,ANONYMOUS_ROUTE} from './access.mjs';
 import {createUsage} from './usage.mjs';
-import {voteIndex,voteObject} from './votes.mjs';
+import {voteIndex,voteObject,publicBusinessIds} from './votes.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const fail=(code,status=400)=>Object.assign(new Error(code),{status});
 async function body(req,limit=16384) {
@@ -65,7 +65,8 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
   // Router: the parliamentary record answers first and stays the authority; web research is added beside it,
   // clearly labelled, for news and upcoming events or when the record holds nothing on the question.
   async function withWebResearch(b,answer,onProgress){
-    if(!webResearchConfigured(env)||answer.status==='refused'||answer.mode==='recorded-replay')return answer;
+    // A guest's question is answered from the parliamentary record only: web research is paid for per search.
+    if(b.recordOnly===true||!webResearchConfigured(env)||answer.status==='refused'||answer.mode==='recorded-replay')return answer;
     if(!(b.webResearch===true||webResearchIntent(b.question)||['insufficient-evidence','upcoming'].includes(answer.status)))return answer;
     try{onProgress?.({stage:'web'});}catch{}
     try{const web=await webResearch({question:b.question,language:b.language||'en',context:scopeTitle(b)?'Scope: '+scopeTitle(b):undefined,env,fetchImpl});return web.status==='ok'?{...answer,web}:{...answer,webStatus:web.status};}
@@ -94,6 +95,8 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
   const auth=createAuth(env,fetchImpl,{file:authFile}),items=accountStore(env,fetchImpl);
   const policy=accessPolicy(env);if(policy!=='open'&&!auth.configured)throw new Error('ACCESS_POLICY_REQUIRES_AUTH');
   const limit=createRateLimiter();let usage;const allowance=()=>usage||(usage=createUsage(store.db,env));
+  // Readers without an account: off unless both of its limits are set (server/access.mjs).
+  const anonymous=anonymousAllowance(env),guestSalt=anonymous?anonymousSalt(env):null;
   // A question answered from the prepared library costs nothing, so it doesn't use the reader's allowance.
   const charge=(viewer,kind,b)=>{if(viewer&&!(kind==='ask'&&b&&findPreparedAnswer(root,b,env)))allowance().consume(viewer.id,kind);};
   const cookie=(name,value,age)=>`${name}=${value}; HttpOnly; SameSite=Lax; Path=${publicBase||'/'}; Max-Age=${age}${env.PUBLIC_ORIGIN?.startsWith('https:')?'; Secure':''}`;
@@ -115,8 +118,13 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
       const p=url.pathname.slice(publicBase.length);
       if(req.method!=='GET' && !allowedRequestOrigin(req.headers.origin,env)) throw fail('ORIGIN_DENIED',403);
       const ip=clientIp(req,env);let viewer=null;
+      // The app asks without cookies. Such a request is a guest's: it may reach one route, and what it may ask is decided there.
+      const guest=Boolean(anonymous)&&p===ANONYMOUS_ROUTE&&req.method==='POST'&&requiresAccount(policy,p)&&!hasSessionCookie(req.headers.cookie);
       if(p.startsWith('/api/auth/')&&req.method!=='GET')limit('auth:'+ip,Number(env.AUTH_RATE_LIMIT)||20);
-      if(requiresAccount(policy,p)){
+      if(guest){
+        limit('anon:'+ip,Number(env.ANONYMOUS_RATE_LIMIT)||6);
+        if(fetchImpl.capacityReached?.())throw fail('DAILY_CAPACITY_REACHED',503);
+      }else if(requiresAccount(policy,p)){
         viewer=await auth.viewer(req.headers.cookie);if(!viewer.emailVerified)throw fail('EMAIL_NOT_VERIFIED',403);
         limit('u:'+viewer.id+':'+(req.method==='GET'?'read':'write'),req.method==='GET'?120:20);
         if(PAID_ROUTES.has(p)&&fetchImpl.capacityReached?.())throw fail('DAILY_CAPACITY_REACHED',503);
@@ -128,7 +136,7 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
       if(p==='/api/agenda'&&req.method==='GET')return json(res,200,await workspace.agenda());
       if(p==='/api/feed'&&req.method==='GET')return json(res,200,workspace.feed());
       if(p==='/api/broadcast'&&req.method==='GET')return json(res,200,workspace.broadcast());
-      if(p==='/api/health'&&req.method==='GET')return json(res,200,{status:'ok',auth:auth.configured,access:policy,ai:env.DEMO_REPLAY_FILE?'recorded-replay':env.INFERENCE_BASE_URL&&env.INFERENCE_MODEL?(lastInferenceProbe()?.state?'live-'+lastInferenceProbe().state:'configured-not-verified'):'editorial-extracts',aiCheckedAt:lastInferenceProbe()?.checkedAt||null,typesafe:env.TYPESAFE_MODE&&env.TYPESAFE_MODE!=='off'?(env.TYPESAFE_API_KEY?`${env.TYPESAFE_MODE}-configured-not-verified`:`${env.TYPESAFE_MODE}-missing-key`):'off',identity:'concept',videoCount:store.listDossiers().reduce((n,d)=>n+store.listEvidence(d.id).filter(e=>e.kind==='video').length,0)});
+      if(p==='/api/health'&&req.method==='GET')return json(res,200,{status:'ok',auth:auth.configured,access:policy,anonymousQuestions:anonymous?{perDay:anonymous.perReader}:null,ai:env.DEMO_REPLAY_FILE?'recorded-replay':env.INFERENCE_BASE_URL&&env.INFERENCE_MODEL?(lastInferenceProbe()?.state?'live-'+lastInferenceProbe().state:'configured-not-verified'):'editorial-extracts',aiCheckedAt:lastInferenceProbe()?.checkedAt||null,typesafe:env.TYPESAFE_MODE&&env.TYPESAFE_MODE!=='off'?(env.TYPESAFE_API_KEY?`${env.TYPESAFE_MODE}-configured-not-verified`:`${env.TYPESAFE_MODE}-missing-key`):'off',identity:'concept',videoCount:store.listDossiers().reduce((n,d)=>n+store.listEvidence(d.id).filter(e=>e.kind==='video').length,0)});
       if(p==='/api/dossiers'&&req.method==='GET')return json(res,200,store.listDossiers());
       if(p==='/api/votes'&&req.method==='GET')return json(res,200,voteIndex(root,env));
       if(p.startsWith('/api/votes/')&&req.method==='GET'){const o=voteObject(root,decodeURIComponent(p.slice(11)),env);if(!o)throw fail('NOT_FOUND',404);return json(res,200,o);}
@@ -153,8 +161,10 @@ export function createServer({store=createStore(path.join(root,'data/pilot.sqlit
       if(p==='/api/parliament/ask'&&req.method==='POST'){const b=await body(req);if(typeof b.question!=='string'||!b.question.trim()||b.question.length>500||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');charge(viewer,'ask',b);try{return json(res,200,await answerWithFallback(b));}catch{throw fail('MODEL_UNAVAILABLE_OR_INVALID_OUTPUT',502);}}
       // Same answer, streamed as newline-delimited JSON: research stages first, then the answer.
       if(p==='/api/parliament/ask/stream'&&req.method==='POST'){
-        const b=await body(req);if(typeof b.question!=='string'||!b.question.trim()||b.question.length>500||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');
-        charge(viewer,'ask',b);
+        let b=await body(req);if(typeof b.question!=='string'||!b.question.trim()||b.question.length>500||!languages.includes(b.language||'en'))throw fail('INVALID_REQUEST');
+        // A prepared answer costs nothing, so it uses no allowance, the guest's included.
+        if(guest){b=anonymousQuestion(b,publicBusinessIds(root));if(!findPreparedAnswer(root,b,env))allowance().consumeAnonymous(anonymousSubject(ip,allowance().today(),guestSalt),anonymous);}
+        else charge(viewer,'ask',b);
         res.writeHead(200,{'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store','X-Accel-Buffering':'no','X-Content-Type-Options':'nosniff'});
         const send=event=>{if(!res.writableEnded)res.write(JSON.stringify(event)+'\n');};
         try{send({type:'answer',answer:await answerWithFallback(b,stage=>send({type:'stage',...stage}))});}
